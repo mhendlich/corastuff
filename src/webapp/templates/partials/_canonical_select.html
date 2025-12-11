@@ -1,0 +1,4 @@
+<option value="">-- Select a product --</option>
+{% for cp in canonical_products %}
+<option value="{{ cp.id }}">{{ cp.name }}</option>
+{% endfor %}

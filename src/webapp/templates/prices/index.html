@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block title %}Prices - Corastuff{% endblock %}
+
+{% block content %}
+<div class="px-4 sm:px-0">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold text-gray-900">Price Overview</h1>
+        <div class="flex space-x-2">
+            <button id="btn-table" onclick="showView('table')" class="px-3 py-1.5 text-sm font-medium rounded bg-indigo-600 text-white">
+                Table
+            </button>
+            <button id="btn-cards" onclick="showView('cards')" class="px-3 py-1.5 text-sm font-medium rounded bg-gray-200 text-gray-700 hover:bg-gray-300">
+                Cards
+            </button>
+        </div>
+    </div>
+
+    {% if canonical_products %}
+    <div class="mb-8">
+        <h2 class="text-lg font-semibold text-gray-900 mb-3">Canonical Products</h2>
+        <div class="bg-white shadow rounded-lg overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Linked Sources</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    {% for product in canonical_products %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4">
+                            <div class="text-sm font-medium text-gray-900">{{ product.name }}</div>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-500">
+                            -
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <a href="/prices/canonical/{{ product.id }}" class="text-indigo-600 hover:text-indigo-900 text-sm font-medium">
+                                View Prices
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Table View -->
+    <div id="view-table">
+        <h2 class="text-lg font-semibold text-gray-900 mb-3">All Products by Source</h2>
+        {% for source, products in products_by_source.items() %}
+        <div class="mb-6">
+            <h3 class="text-md font-medium text-gray-700 mb-2 flex items-center">
+                <span class="inline-block w-3 h-3 rounded-full mr-2
+                    {% if source == 'bergzeit' %}bg-green-500
+                    {% elif source == 'sportscheck' %}bg-blue-500
+                    {% elif source == 'galaxus_ch' %}bg-purple-500
+                    {% elif source == 'galaxus_de' %}bg-pink-500
+                    {% elif source == 'kaufland' %}bg-orange-500
+                    {% else %}bg-gray-500{% endif %}"></span>
+                {{ source }} ({{ products|length }} products)
+            </h3>
+            <div class="bg-white shadow rounded-lg overflow-hidden">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Price</th>
+                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+                        {% for product in products[:20] %}
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-4 py-2">
+                                <div class="text-sm text-gray-900 truncate max-w-md" title="{{ product.name }}">
+                                    {{ product.name }}
+                                </div>
+                            </td>
+                            <td class="px-4 py-2 text-right">
+                                <span class="text-sm font-medium text-gray-900">
+                                    {% if product.price %}
+                                    {{ "%.2f"|format(product.price) }} {{ product.currency or 'EUR' }}
+                                    {% else %}
+                                    -
+                                    {% endif %}
+                                </span>
+                            </td>
+                            <td class="px-4 py-2 text-right">
+                                {% if product.item_id %}
+                                <a href="/prices/product/{{ source }}/{{ product.item_id }}" class="text-indigo-600 hover:text-indigo-900 text-xs">
+                                    History
+                                </a>
+                                {% endif %}
+                                {% if product.url %}
+                                <a href="{{ product.url }}" target="_blank" class="text-gray-400 hover:text-gray-600 text-xs ml-2">
+                                    Visit
+                                </a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% if products|length > 20 %}
+                        <tr>
+                            <td colspan="3" class="px-4 py-2 text-center text-sm text-gray-500">
+                                ... and {{ products|length - 20 }} more products
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Cards View -->
+    <div id="view-cards" class="hidden">
+        <h2 class="text-lg font-semibold text-gray-900 mb-3">All Products</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {% for source, products in products_by_source.items() %}
+            {% for product in products[:15] %}
+            <div class="bg-white shadow rounded-lg p-4 hover:shadow-md transition-shadow">
+                <div class="flex justify-between items-start mb-2">
+                    <span class="inline-block px-2 py-0.5 text-xs rounded
+                        {% if source == 'bergzeit' %}bg-green-100 text-green-800
+                        {% elif source == 'sportscheck' %}bg-blue-100 text-blue-800
+                        {% elif source == 'galaxus_ch' %}bg-purple-100 text-purple-800
+                        {% elif source == 'galaxus_de' %}bg-pink-100 text-pink-800
+                        {% elif source == 'kaufland' %}bg-orange-100 text-orange-800
+                        {% else %}bg-gray-100 text-gray-800{% endif %}">
+                        {{ source }}
+                    </span>
+                    {% if product.price %}
+                    <span class="text-lg font-bold text-gray-900">
+                        {{ "%.2f"|format(product.price) }} {{ product.currency or 'EUR' }}
+                    </span>
+                    {% endif %}
+                </div>
+                <h3 class="text-sm font-medium text-gray-900 mb-2 line-clamp-2">{{ product.name }}</h3>
+                <div class="flex justify-between items-center text-xs">
+                    {% if product.item_id %}
+                    <a href="/prices/product/{{ source }}/{{ product.item_id }}" class="text-indigo-600 hover:text-indigo-900">
+                        View History
+                    </a>
+                    {% else %}
+                    <span></span>
+                    {% endif %}
+                    {% if product.url %}
+                    <a href="{{ product.url }}" target="_blank" class="text-gray-400 hover:text-gray-600">
+                        Visit Store
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<script>
+function showView(view) {
+    document.getElementById('view-table').classList.toggle('hidden', view !== 'table');
+    document.getElementById('view-cards').classList.toggle('hidden', view !== 'cards');
+    document.getElementById('btn-table').classList.toggle('bg-indigo-600', view === 'table');
+    document.getElementById('btn-table').classList.toggle('text-white', view === 'table');
+    document.getElementById('btn-table').classList.toggle('bg-gray-200', view !== 'table');
+    document.getElementById('btn-table').classList.toggle('text-gray-700', view !== 'table');
+    document.getElementById('btn-cards').classList.toggle('bg-indigo-600', view === 'cards');
+    document.getElementById('btn-cards').classList.toggle('text-white', view === 'cards');
+    document.getElementById('btn-cards').classList.toggle('bg-gray-200', view !== 'cards');
+    document.getElementById('btn-cards').classList.toggle('text-gray-700', view !== 'cards');
+}
+</script>
+
+<style>
+.line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+</style>
+{% endblock %}
