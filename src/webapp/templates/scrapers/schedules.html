@@ -2,65 +2,69 @@
 
 {% block title %}Scraper Schedules - Corastuff{% endblock %}
 
-{% block content %}
-<div class="px-4 sm:px-0">
-    <div class="flex justify-between items-center mb-6">
-        <div>
-            <h1 class="text-2xl font-bold text-gray-900">Scraper Schedules</h1>
-            <p class="mt-1 text-sm text-gray-500">Configure automatic scraper runs</p>
-        </div>
-        <a href="/scrapers" class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">
-            &larr; Back to Scrapers
-        </a>
-    </div>
+{% block page_title %}Scraper Schedules{% endblock %}
+{% block page_subtitle %}
+<p class="mt-1 text-sm text-slate-400">Automate refresh intervals for every source.</p>
+{% endblock %}
+{% block page_actions %}
+<a href="/scrapers" class="app-btn-secondary inline-flex items-center px-3 py-2 rounded-md text-sm font-medium">
+    &larr; Back to Scrapers
+</a>
+{% endblock %}
 
-    <!-- Scheduler Status -->
-    <div id="scheduler-status" class="mb-6">
+{% block content %}
+<div class="space-y-5">
+    <div id="scheduler-status">
         {% include "scrapers/_scheduler_status.html" %}
     </div>
 
-    <!-- Schedule Configuration Form -->
-    <div class="bg-white shadow rounded-lg overflow-hidden">
+    <div class="app-card overflow-hidden">
+        <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+            <div>
+                <h2 class="text-sm font-semibold text-white/90">Schedule Configuration</h2>
+                <p class="text-xs text-slate-400 mt-0.5">Toggle automation and adjust cadence.</p>
+            </div>
+        </div>
         <form action="/scrapers/schedules/save-all" method="POST">
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
+            <table class="min-w-full divide-y divide-white/10 text-sm">
+                <thead class="bg-white/5">
                     <tr>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                             Scraper
                         </th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                             Enabled
                         </th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                             Interval (minutes)
                         </th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                             Last Run
                         </th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                             Next Run
                         </th>
                     </tr>
                 </thead>
-                <tbody id="schedules-tbody" class="bg-white divide-y divide-gray-200">
+                <tbody id="schedules-tbody" class="divide-y divide-white/5">
                     {% for scraper in scrapers %}
                     {% include "scrapers/_schedule_row.html" %}
                     {% endfor %}
                 </tbody>
             </table>
 
-            <div class="px-6 py-4 bg-gray-50 border-t border-gray-200">
+            <div class="px-6 py-4 bg-white/5 border-t border-white/10">
                 <button type="submit"
-                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    class="app-btn inline-flex items-center px-4 py-2 rounded-md text-sm font-semibold">
                     Save All Schedules
                 </button>
             </div>
         </form>
     </div>
 
-    <div class="mt-6 text-sm text-gray-500">
-        <p><strong>Note:</strong> The scheduler must be running for automatic scrapes to occur.</p>
-        <p class="mt-1">Schedules are checked every 60 seconds. Scrapers will run when their next_run time has passed.</p>
+    <div class="app-card p-4 text-sm text-slate-300/90">
+        <p><span class="font-semibold text-white">Note:</span> The scheduler must be running for automatic scrapes to occur.</p>
+        <p class="mt-1 text-xs text-slate-500">Schedules are checked every 60 seconds. Scrapers will run when their next_run time has passed.</p>
     </div>
 </div>
 {% endblock %}

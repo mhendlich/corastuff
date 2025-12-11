@@ -2,75 +2,70 @@
 
 {% block title %}Products - Corastuff{% endblock %}
 
+{% block page_title %}Canonical Products{% endblock %}
+{% block page_subtitle %}
+<p class="mt-1 text-sm text-slate-400">Manage your master product list</p>
+{% endblock %}
+{% block page_actions %}
+<a href="/products/new" class="app-btn inline-flex items-center px-4 py-2 rounded-md text-sm font-semibold">
+    New Product
+</a>
+{% endblock %}
+
 {% block content %}
-<div class="px-4 sm:px-0 flex justify-between items-center">
-    <div>
-        <h1 class="text-2xl font-semibold text-gray-900">Canonical Products</h1>
-        <p class="mt-1 text-sm text-gray-600">Manage your master product list</p>
-    </div>
-    <a href="/products/new" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-        New Product
-    </a>
-</div>
-
-<!-- Search -->
-<div class="mt-6 mb-4">
-    <div class="relative">
-        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-            </svg>
+<div class="space-y-4">
+    <div class="app-card p-4">
+        <div class="relative">
+            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <svg class="h-5 w-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                </svg>
+            </div>
+            <input type="text" id="search-input" placeholder="Search products..."
+                   class="app-input block w-full pl-10 pr-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand/60 focus:border-transparent"
+                   oninput="filterProducts()">
         </div>
-        <input type="text" id="search-input" placeholder="Search products..."
-               class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-               oninput="filterProducts()">
+        <div id="filter-results" class="mt-2 text-sm text-slate-400 hidden">
+            Showing <span id="visible-count">0</span> of {{ products|length }} products
+        </div>
     </div>
-    <div id="filter-results" class="mt-2 text-sm text-gray-500 hidden">
-        Showing <span id="visible-count">0</span> of {{ products|length }} products
-    </div>
-</div>
 
-<div class="mt-2">
     {% if products %}
-    <div class="bg-white shadow overflow-hidden sm:rounded-md">
-        <ul role="list" class="divide-y divide-gray-200">
+    <div class="app-card overflow-hidden">
+        <ul role="list" class="divide-y divide-white/5">
             {% for product in products %}
             <li class="product-item" data-name="{{ product.name | lower }}" data-description="{{ (product.description or '') | lower }}">
-                <a href="/products/{{ product.id }}" class="block hover:bg-gray-50">
-                    <div class="px-4 py-4 sm:px-6">
-                        <div class="flex items-center justify-between">
-                            <p class="text-sm font-medium text-indigo-600 truncate">{{ product.name }}</p>
-                            <div class="ml-2 flex-shrink-0 flex">
-                                <p class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full {% if product.link_count > 0 %}bg-green-100 text-green-800{% else %}bg-gray-100 text-gray-800{% endif %}">
-                                    {{ product.link_count }} linked
-                                </p>
-                            </div>
+                <a href="/products/{{ product.id }}" class="block px-5 py-4 app-card-hover">
+                    <div class="flex items-center justify-between">
+                        <p class="text-sm font-semibold text-white truncate">{{ product.name }}</p>
+                        <span class="px-2.5 py-1 inline-flex text-xs font-semibold rounded-full border
+                            {% if product.link_count > 0 %}bg-emerald-500/15 text-emerald-300 border-emerald-500/30
+                            {% else %}bg-white/5 text-slate-300 border-white/10{% endif %}">
+                            {{ product.link_count }} linked
+                        </span>
+                    </div>
+                    <div class="mt-2 flex items-start justify-between gap-4">
+                        <div class="min-w-0">
+                            {% if product.description %}
+                            <p class="text-sm text-slate-300/90">{{ product.description }}</p>
+                            {% else %}
+                            <p class="text-sm text-slate-500 italic">No description</p>
+                            {% endif %}
                         </div>
-                        <div class="mt-2 sm:flex sm:justify-between">
-                            <div class="sm:flex">
-                                {% if product.description %}
-                                <p class="text-sm text-gray-500">{{ product.description }}</p>
-                                {% else %}
-                                <p class="text-sm text-gray-400 italic">No description</p>
-                                {% endif %}
-                            </div>
-                            <div class="mt-2 flex items-center text-sm text-gray-500 sm:mt-0">
-                                {% if product.links %}
-                                <div class="flex -space-x-1">
-                                    {% for link in product.links[:5] %}
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200">
-                                        {{ link.source }}
-                                    </span>
-                                    {% endfor %}
-                                    {% if product.links|length > 5 %}
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                                        +{{ product.links|length - 5 }}
-                                    </span>
-                                    {% endif %}
-                                </div>
-                                {% endif %}
-                            </div>
+                        {% if product.links %}
+                        <div class="flex -space-x-1 shrink-0">
+                            {% for link in product.links[:5] %}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-white/5 text-slate-200 border border-white/10">
+                                {{ link.source }}
+                            </span>
+                            {% endfor %}
+                            {% if product.links|length > 5 %}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-white/5 text-slate-200 border border-white/10">
+                                +{{ product.links|length - 5 }}
+                            </span>
+                            {% endif %}
                         </div>
+                        {% endif %}
                     </div>
                 </a>
             </li>
@@ -78,14 +73,14 @@
         </ul>
     </div>
     {% else %}
-    <div class="text-center py-12 bg-white rounded-lg shadow">
-        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div class="app-card p-10 text-center">
+        <svg class="mx-auto h-12 w-12 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
         </svg>
-        <h3 class="mt-2 text-sm font-medium text-gray-900">No products</h3>
-        <p class="mt-1 text-sm text-gray-500">Get started by creating a canonical product.</p>
-        <div class="mt-6">
-            <a href="/products/new" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+        <h3 class="mt-3 text-sm font-semibold text-white">No products</h3>
+        <p class="mt-1 text-sm text-slate-400">Create a canonical product to start linking sources.</p>
+        <div class="mt-5">
+            <a href="/products/new" class="app-btn inline-flex items-center px-4 py-2 rounded-md text-sm font-semibold">
                 New Product
             </a>
         </div>

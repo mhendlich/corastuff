@@ -1,12 +1,12 @@
 <tr id="schedule-{{ scraper.scraper_name }}">
     <td class="px-6 py-4 whitespace-nowrap">
-        <div class="text-sm font-medium text-gray-900">{{ scraper.scraper_name }}</div>
+        <div class="text-sm font-medium text-white">{{ scraper.scraper_name }}</div>
     </td>
     <td class="px-6 py-4 whitespace-nowrap">
         <input type="checkbox"
             name="enabled_{{ scraper.scraper_name }}"
             {% if scraper.enabled %}checked{% endif %}
-            class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+            class="h-4 w-4 text-brand focus:ring-brand/60 border-white/20 bg-white/5 rounded">
     </td>
     <td class="px-6 py-4 whitespace-nowrap">
         <input type="number"
@@ -14,20 +14,20 @@
             value="{{ scraper.interval_minutes or 60 }}"
             min="1"
             max="10080"
-            class="w-24 px-2 py-1 text-sm border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
+            class="w-28 px-2 py-1 text-sm app-input rounded-md focus:outline-none focus:ring-2 focus:ring-brand/60">
     </td>
-    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-300/80">
         {% if scraper.last_run %}
         {{ scraper.last_run[:16].replace('T', ' ') }}
         {% else %}
         Never
         {% endif %}
     </td>
-    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-300/80">
         {% if scraper.next_run %}
         {{ scraper.next_run[:16].replace('T', ' ') }}
         {% elif scraper.enabled %}
-        <span class="text-yellow-600">Pending</span>
+        <span class="text-amber-200">Pending</span>
         {% else %}
         -
         {% endif %}

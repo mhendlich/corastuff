@@ -2,46 +2,51 @@
 
 {% block title %}{% if product %}Edit {{ product.name }}{% else %}New Product{% endif %} - Corastuff{% endblock %}
 
-{% block content %}
-<div class="px-4 sm:px-0">
-    <nav class="text-sm mb-2" aria-label="Breadcrumb">
-        <ol class="flex items-center space-x-2">
-            <li><a href="/products" class="text-gray-500 hover:text-gray-700">Products</a></li>
-            <li class="text-gray-400">/</li>
-            <li class="text-gray-900">{% if product %}Edit{% else %}New{% endif %}</li>
-        </ol>
-    </nav>
-    <h1 class="text-2xl font-semibold text-gray-900">{% if product %}Edit Product{% else %}New Canonical Product{% endif %}</h1>
-    <p class="mt-1 text-sm text-gray-600">{% if product %}Update the product details{% else %}Create a master product to link source products to{% endif %}</p>
-</div>
+{% block breadcrumbs %}
+<nav class="text-xs text-slate-500 mb-1" aria-label="Breadcrumb">
+    <ol class="flex items-center space-x-2">
+        <li><a href="/products" class="hover:text-slate-200">Products</a></li>
+        <li class="text-slate-600">/</li>
+        <li class="text-slate-300">{% if product %}Edit{% else %}New{% endif %}</li>
+    </ol>
+</nav>
+{% endblock %}
 
-<div class="mt-6 max-w-2xl">
-    <form action="{% if product %}/products/{{ product.id }}/edit{% else %}/products/new{% endif %}" method="POST" class="space-y-6 bg-white shadow px-4 py-5 sm:rounded-lg sm:p-6">
+{% block page_title %}{% if product %}Edit Product{% else %}New Canonical Product{% endif %}{% endblock %}
+{% block page_subtitle %}
+<p class="mt-1 text-sm text-slate-400">
+    {% if product %}Update the product details{% else %}Create a master product to link source products to{% endif %}
+</p>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl">
+    <form action="{% if product %}/products/{{ product.id }}/edit{% else %}/products/new{% endif %}" method="POST" class="space-y-6 app-card p-6">
         <div>
-            <label for="name" class="block text-sm font-medium text-gray-700">Product Name</label>
+            <label for="name" class="block text-sm font-medium text-slate-200">Product Name</label>
             <div class="mt-1">
                 <input type="text" name="name" id="name" required
                     value="{{ product.name if product else '' }}"
-                    class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                    class="app-input block w-full rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/60 focus:border-transparent"
                     placeholder="e.g., BLACKROLL Standard">
             </div>
-            <p class="mt-2 text-sm text-gray-500">The canonical name for this product across all sources.</p>
+            <p class="mt-2 text-sm text-slate-400">The canonical name for this product across all sources.</p>
         </div>
 
         <div>
-            <label for="description" class="block text-sm font-medium text-gray-700">Description (optional)</label>
+            <label for="description" class="block text-sm font-medium text-slate-200">Description (optional)</label>
             <div class="mt-1">
                 <textarea name="description" id="description" rows="3"
-                    class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                    class="app-input block w-full rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/60 focus:border-transparent"
                     placeholder="Notes about this product...">{{ product.description if product and product.description else '' }}</textarea>
             </div>
         </div>
 
-        <div class="flex justify-end space-x-3">
-            <a href="{% if product %}/products/{{ product.id }}{% else %}/products{% endif %}" class="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+        <div class="flex justify-end space-x-3 pt-2">
+            <a href="{% if product %}/products/{{ product.id }}{% else %}/products{% endif %}" class="app-btn-secondary py-2 px-4 rounded-md text-sm font-medium">
                 Cancel
             </a>
-            <button type="submit" class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+            <button type="submit" class="app-btn inline-flex justify-center py-2 px-4 rounded-md text-sm font-semibold">
                 {% if product %}Save Changes{% else %}Create Product{% endif %}
             </button>
         </div>

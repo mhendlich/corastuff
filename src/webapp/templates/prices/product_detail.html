@@ -2,97 +2,97 @@
 
 {% block title %}{{ product.name }} - Price History{% endblock %}
 
+{% block breadcrumbs %}
+<a href="/prices" class="text-xs text-slate-500 hover:text-slate-200">&larr; Prices</a>
+{% endblock %}
+{% block page_title %}{{ product.name }}{% endblock %}
+{% block page_subtitle %}
+{% if link %}
+<p class="mt-1 text-sm text-slate-400">
+    Linked to <a href="/prices/canonical/{{ link.canonical_id }}" class="text-brand-cyan hover:text-white">{{ link.canonical_name }}</a>
+</p>
+{% endif %}
+{% endblock %}
+
 {% block content %}
-<div class="px-4 sm:px-0">
-    <div class="mb-6">
-        <a href="/prices" class="text-indigo-600 hover:text-indigo-900 text-sm">&larr; Back to Prices</a>
-    </div>
-
-    <div class="bg-white shadow rounded-lg p-6 mb-6">
-        <div class="flex justify-between items-start">
-            <div>
-                <span class="inline-block px-2 py-0.5 text-xs rounded mb-2
-                    {% if source == 'bergzeit' %}bg-green-100 text-green-800
-                    {% elif source == 'sportscheck' %}bg-blue-100 text-blue-800
-                    {% elif source == 'galaxus_ch' %}bg-purple-100 text-purple-800
-                    {% elif source == 'galaxus_de' %}bg-pink-100 text-pink-800
-                    {% elif source == 'kaufland' %}bg-orange-100 text-orange-800
-                    {% else %}bg-gray-100 text-gray-800{% endif %}">
-                    {{ source }}
-                </span>
-                <h1 class="text-2xl font-bold text-gray-900">{{ product.name }}</h1>
-                {% if link %}
-                <p class="text-sm text-gray-500 mt-1">
-                    Linked to: <a href="/prices/canonical/{{ link.canonical_id }}" class="text-indigo-600 hover:text-indigo-900">{{ link.canonical_name }}</a>
-                </p>
-                {% endif %}
+<div class="app-card p-6 mb-6">
+    <div class="flex justify-between items-start">
+        <div>
+            <span class="inline-block px-2 py-0.5 text-[11px] rounded border mb-2
+                {% if source == 'bergzeit' %}bg-green-500/15 text-green-300 border-green-500/30
+                {% elif source == 'sportscheck' %}bg-blue-500/15 text-blue-300 border-blue-500/30
+                {% elif source == 'galaxus_ch' %}bg-purple-500/15 text-purple-300 border-purple-500/30
+                {% elif source == 'galaxus_de' %}bg-pink-500/15 text-pink-300 border-pink-500/30
+                {% elif source == 'kaufland' %}bg-orange-500/15 text-orange-300 border-orange-500/30
+                {% else %}bg-white/5 text-slate-200 border-white/10{% endif %}">
+                {{ source }}
+            </span>
+            {% if product.url %}
+            <a href="{{ product.url }}" target="_blank" class="inline-block mt-2 text-sm text-brand-cyan hover:text-white">
+                Visit Store &rarr;
+            </a>
+            {% endif %}
+        </div>
+        <div class="text-right">
+            <div class="text-3xl font-bold text-white">
+                {{ "%.2f"|format(product.price) }} {{ product.currency or 'EUR' }}
             </div>
-            <div class="text-right">
-                <div class="text-3xl font-bold text-gray-900">
-                    {{ "%.2f"|format(product.price) }} {{ product.currency or 'EUR' }}
-                </div>
-                <p class="text-sm text-gray-500">Current Price</p>
-                {% if product.url %}
-                <a href="{{ product.url }}" target="_blank" class="inline-block mt-2 text-sm text-indigo-600 hover:text-indigo-900">
-                    Visit Store &rarr;
-                </a>
-                {% endif %}
-            </div>
+            <p class="text-sm text-slate-400">Current Price</p>
         </div>
     </div>
+</div>
 
-    <!-- Price Chart -->
-    <div class="bg-white shadow rounded-lg p-6 mb-6">
-        <h2 class="text-lg font-semibold text-gray-900 mb-4">Price History</h2>
-        <div class="h-64">
-            <canvas id="priceChart"></canvas>
-        </div>
+<!-- Price Chart -->
+<div class="app-card p-6 mb-6">
+    <h2 class="text-sm font-semibold tracking-wide text-white/90 mb-4">Price History</h2>
+    <div class="h-64">
+        <canvas id="priceChart"></canvas>
     </div>
+</div>
 
-    <!-- Price History Table -->
-    <div class="bg-white shadow rounded-lg overflow-hidden">
-        <div class="px-6 py-4 border-b border-gray-200">
-            <h2 class="text-lg font-semibold text-gray-900">Historical Data</h2>
-        </div>
-        <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-                <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Price</th>
-                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Change</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200">
-                {% for i in range(history|length) %}
-                {% set h = history[i] %}
-                {% set prev = history[i + 1] if i + 1 < history|length else none %}
-                <tr class="hover:bg-gray-50">
-                    <td class="px-6 py-4 text-sm text-gray-900">
-                        {{ h.scraped_at[:16].replace('T', ' ') }}
-                    </td>
-                    <td class="px-6 py-4 text-right text-sm font-medium text-gray-900">
-                        {{ "%.2f"|format(h.price) }} {{ h.currency or 'EUR' }}
-                    </td>
-                    <td class="px-6 py-4 text-right text-sm">
-                        {% if prev and h.price and prev.price %}
-                            {% set change = h.price - prev.price %}
-                            {% set pct = (change / prev.price * 100) if prev.price else 0 %}
-                            {% if change > 0 %}
-                            <span class="text-red-600">+{{ "%.2f"|format(change) }} (+{{ "%.1f"|format(pct) }}%)</span>
-                            {% elif change < 0 %}
-                            <span class="text-green-600">{{ "%.2f"|format(change) }} ({{ "%.1f"|format(pct) }}%)</span>
-                            {% else %}
-                            <span class="text-gray-400">-</span>
-                            {% endif %}
+<!-- Price History Table -->
+<div class="app-card overflow-hidden">
+    <div class="px-6 py-4 border-b border-white/10">
+        <h2 class="text-sm font-semibold tracking-wide text-white/90">Historical Data</h2>
+    </div>
+    <table class="min-w-full divide-y divide-white/10 text-sm">
+        <thead class="bg-white/5">
+            <tr>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase">Date</th>
+                <th class="px-6 py-3 text-right text-[11px] font-semibold text-slate-400 uppercase">Price</th>
+                <th class="px-6 py-3 text-right text-[11px] font-semibold text-slate-400 uppercase">Change</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-white/5">
+            {% for i in range(history|length) %}
+            {% set h = history[i] %}
+            {% set prev = history[i + 1] if i + 1 < history|length else none %}
+            <tr class="hover:bg-white/5">
+                <td class="px-6 py-4 text-sm text-slate-100">
+                    {{ h.scraped_at[:16].replace('T', ' ') }}
+                </td>
+                <td class="px-6 py-4 text-right text-sm font-medium text-white">
+                    {{ "%.2f"|format(h.price) }} {{ h.currency or 'EUR' }}
+                </td>
+                <td class="px-6 py-4 text-right text-sm">
+                    {% if prev and h.price and prev.price %}
+                        {% set change = h.price - prev.price %}
+                        {% set pct = (change / prev.price * 100) if prev.price else 0 %}
+                        {% if change > 0 %}
+                        <span class="text-red-300">+{{ "%.2f"|format(change) }} (+{{ "%.1f"|format(pct) }}%)</span>
+                        {% elif change < 0 %}
+                        <span class="text-emerald-300">{{ "%.2f"|format(change) }} ({{ "%.1f"|format(pct) }}%)</span>
                         {% else %}
-                        <span class="text-gray-400">-</span>
+                        <span class="text-slate-500">-</span>
                         {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+                    {% else %}
+                    <span class="text-slate-500">-</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
 {% endblock %}
 
@@ -131,8 +131,8 @@ document.addEventListener('DOMContentLoaded', function() {
             datasets: [{
                 label: 'Price ({{ product.currency or "EUR" }})',
                 data: dataPoints,
-                borderColor: 'rgb(79, 70, 229)',
-                backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                borderColor: 'rgb(139, 92, 246)',
+                backgroundColor: 'rgba(139, 92, 246, 0.15)',
                 fill: true,
                 tension: 0.1,
                 pointRadius: dataPoints.length < 50 ? 4 : 2
@@ -167,7 +167,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     },
                     ticks: {
-                        maxTicksLimit: 8
+                        maxTicksLimit: 8,
+                        color: '#94a3b8'
+                    },
+                    grid: {
+                        color: 'rgba(148, 163, 184, 0.12)'
                     }
                 },
                 y: {
@@ -175,7 +179,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     ticks: {
                         callback: function(value) {
                             return value.toFixed(2) + ' {{ product.currency or "EUR" }}';
-                        }
+                        },
+                        color: '#94a3b8'
+                    },
+                    grid: {
+                        color: 'rgba(148, 163, 184, 0.12)'
                     }
                 }
             }

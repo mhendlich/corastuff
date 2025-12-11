@@ -2,71 +2,70 @@
 
 {% block title %}Scrape History - Corastuff{% endblock %}
 
-{% block content %}
-<div class="px-4 sm:px-0">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold text-gray-900">Scrape History</h1>
-        <a href="/scrapers"
-            class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-            <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
-            </svg>
-            Back to Scrapers
-        </a>
-    </div>
+{% block page_title %}Scrape History{% endblock %}
+{% block page_subtitle %}
+<p class="mt-1 text-sm text-slate-400">Detailed runs, failures, and timing for every scraper.</p>
+{% endblock %}
+{% block page_actions %}
+<a href="/scrapers" class="app-btn-secondary inline-flex items-center px-3 py-2 rounded-md text-sm font-medium">
+    <svg class="-ml-0.5 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+    </svg>
+    Back to Scrapers
+</a>
+{% endblock %}
 
-    <!-- Stats Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <div class="bg-white rounded-lg shadow p-4">
-            <div class="text-sm font-medium text-gray-500">Total Runs</div>
-            <div class="mt-1 text-2xl font-semibold text-gray-900">{{ stats.total }}</div>
+{% block content %}
+<div class="space-y-5">
+    <div class="grid grid-cols-5 gap-4">
+        <div class="app-card app-card-hover p-4">
+            <div class="text-[11px] uppercase tracking-widest text-slate-400">Total Runs</div>
+            <div class="mt-1 text-2xl font-semibold text-white">{{ stats.total }}</div>
         </div>
-        <div class="bg-white rounded-lg shadow p-4">
-            <div class="text-sm font-medium text-gray-500">Successful</div>
-            <div class="mt-1 text-2xl font-semibold text-green-600">{{ stats.successful }}</div>
+        <div class="app-card app-card-hover p-4 border border-emerald-500/30 bg-emerald-500/10">
+            <div class="text-[11px] uppercase tracking-widest text-emerald-200">Successful</div>
+            <div class="mt-1 text-2xl font-semibold text-white">{{ stats.successful }}</div>
         </div>
-        <div class="bg-white rounded-lg shadow p-4">
-            <div class="text-sm font-medium text-gray-500">Failed</div>
-            <div class="mt-1 text-2xl font-semibold text-red-600">{{ stats.failed }}</div>
+        <div class="app-card app-card-hover p-4 border border-red-500/30 bg-red-500/10">
+            <div class="text-[11px] uppercase tracking-widest text-red-200">Failed</div>
+            <div class="mt-1 text-2xl font-semibold text-white">{{ stats.failed }}</div>
         </div>
-        <div class="bg-white rounded-lg shadow p-4">
-            <div class="text-sm font-medium text-gray-500">Running</div>
-            <div class="mt-1 text-2xl font-semibold text-blue-600">{{ stats.running }}</div>
+        <div class="app-card app-card-hover p-4 border border-brand/30 bg-brand/10">
+            <div class="text-[11px] uppercase tracking-widest text-brand-soft">Running</div>
+            <div class="mt-1 text-2xl font-semibold text-white">{{ stats.running }}</div>
         </div>
-        <div class="bg-white rounded-lg shadow p-4">
-            <div class="text-sm font-medium text-gray-500">Success Rate</div>
-            <div class="mt-1 text-2xl font-semibold {% if stats.success_rate >= 80 %}text-green-600{% elif stats.success_rate >= 50 %}text-yellow-600{% else %}text-red-600{% endif %}">
+        <div class="app-card app-card-hover p-4">
+            <div class="text-[11px] uppercase tracking-widest text-slate-400">Success Rate</div>
+            <div class="mt-1 text-2xl font-semibold {% if stats.success_rate >= 80 %}text-emerald-300{% elif stats.success_rate >= 50 %}text-amber-200{% else %}text-red-200{% endif %}">
                 {{ "%.1f"|format(stats.success_rate) }}%
             </div>
         </div>
     </div>
 
     {% if stats.recent_failures > 0 %}
-    <div class="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
-        <div class="flex">
-            <div class="flex-shrink-0">
-                <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+    <div class="app-card p-4 border border-red-500/40 bg-red-500/10">
+        <div class="flex items-start gap-3">
+            <div class="h-10 w-10 rounded-lg bg-red-500/20 border border-red-500/40 grid place-items-center text-red-100">
+                <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
                 </svg>
             </div>
-            <div class="ml-3">
-                <h3 class="text-sm font-medium text-red-800">
-                    {{ stats.recent_failures }} failed run{% if stats.recent_failures != 1 %}s{% endif %} in the last 24 hours
-                </h3>
-                <div class="mt-2 text-sm text-red-700">
-                    <a href="?status=failed" class="font-medium underline hover:text-red-600">View failed runs</a>
-                </div>
+            <div>
+                <h3 class="text-sm font-semibold text-white">{{ stats.recent_failures }} failed run{% if stats.recent_failures != 1 %}s{% endif %} in the last 24 hours</h3>
+                <p class="mt-1 text-sm text-red-100/80">
+                    Investigate recent failures to keep data fresh.
+                    <a href="?status=failed" class="font-semibold underline decoration-red-200 hover:text-white">View failed runs</a>
+                </p>
             </div>
         </div>
     </div>
     {% endif %}
 
-    <!-- Filters -->
-    <div class="bg-white shadow rounded-lg p-4 mb-6">
+    <div class="app-card p-4">
         <form method="get" class="flex flex-wrap gap-4 items-end">
             <div>
-                <label for="scraper" class="block text-sm font-medium text-gray-700">Scraper</label>
-                <select id="scraper" name="scraper" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md border">
+                <label for="scraper" class="block text-sm font-medium text-slate-200">Scraper</label>
+                <select id="scraper" name="scraper" class="mt-1 app-input block w-56 pl-3 pr-10 py-2 text-sm rounded-md focus:outline-none focus:ring-2 focus:ring-brand/60">
                     <option value="">All Scrapers</option>
                     {% for name in scraper_names %}
                     <option value="{{ name }}" {% if selected_scraper == name %}selected{% endif %}>{{ name }}</option>
@@ -74,8 +73,8 @@
                 </select>
             </div>
             <div>
-                <label for="status" class="block text-sm font-medium text-gray-700">Status</label>
-                <select id="status" name="status" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md border">
+                <label for="status" class="block text-sm font-medium text-slate-200">Status</label>
+                <select id="status" name="status" class="mt-1 app-input block w-56 pl-3 pr-10 py-2 text-sm rounded-md focus:outline-none focus:ring-2 focus:ring-brand/60">
                     <option value="">All Statuses</option>
                     <option value="completed" {% if selected_status == 'completed' %}selected{% endif %}>Completed</option>
                     <option value="failed" {% if selected_status == 'failed' %}selected{% endif %}>Failed</option>
@@ -83,11 +82,11 @@
                 </select>
             </div>
             <div>
-                <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                <button type="submit" class="app-btn inline-flex items-center px-4 py-2 rounded-md text-sm font-semibold">
                     Filter
                 </button>
                 {% if selected_scraper or selected_status %}
-                <a href="/scrapers/history" class="ml-2 inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                <a href="/scrapers/history" class="ml-2 app-btn-secondary inline-flex items-center px-4 py-2 rounded-md text-sm font-medium">
                     Clear
                 </a>
                 {% endif %}
@@ -95,71 +94,76 @@
         </form>
     </div>
 
-    <!-- History Table -->
-    <div class="bg-white shadow rounded-lg overflow-hidden">
+    <div class="app-card overflow-hidden">
+        <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+            <div>
+                <h2 class="text-sm font-semibold text-white/90">Run Log</h2>
+                <p class="text-xs text-slate-400 mt-0.5">Newest first, auto-updated for running jobs.</p>
+            </div>
+        </div>
         {% if runs %}
-        <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
+        <table class="min-w-full divide-y divide-white/10 text-sm">
+            <thead class="bg-white/5">
                 <tr>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                         Scraper
                     </th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                         Status
                     </th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                         Started
                     </th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                         Duration
                     </th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                         Products
                     </th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                         Error
                     </th>
                 </tr>
             </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
+            <tbody class="divide-y divide-white/5">
                 {% for run in runs %}
-                <tr class="{% if run.status == 'failed' %}bg-red-50 hover:bg-red-100{% else %}hover:bg-gray-50{% endif %}">
+                <tr class="{% if run.status == 'failed' %}bg-red-500/5 hover:bg-red-500/10{% else %}hover:bg-white/5{% endif %}">
                     <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm font-medium text-gray-900">{{ run.scraper_name }}</div>
+                        <div class="text-sm font-medium text-white">{{ run.scraper_name }}</div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         {% if run.status == 'running' %}
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            <svg class="animate-spin -ml-0.5 mr-1.5 h-3 w-3 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-brand/20 text-brand-soft border border-brand/40">
+                            <svg class="animate-spin -ml-0.5 mr-1.5 h-3 w-3 text-brand-soft" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
                             Running
                         </span>
                         {% elif run.status == 'completed' %}
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            <svg class="-ml-0.5 mr-1.5 h-3 w-3 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                            <svg class="-ml-0.5 mr-1.5 h-3 w-3 text-emerald-300" fill="currentColor" viewBox="0 0 20 20">
                                 <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
                             </svg>
                             Completed
                         </span>
                         {% elif run.status == 'failed' %}
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                            <svg class="-ml-0.5 mr-1.5 h-3 w-3 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-red-500/15 text-red-200 border border-red-500/30">
+                            <svg class="-ml-0.5 mr-1.5 h-3 w-3 text-red-200" fill="currentColor" viewBox="0 0 20 20">
                                 <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
                             </svg>
                             Failed
                         </span>
                         {% else %}
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-white/5 text-slate-200 border border-white/10">
                             {{ run.status }}
                         </span>
                         {% endif %}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-300/80">
                         {{ run.started_at[:19].replace('T', ' ') }}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-300/80">
                         {% if run.duration_seconds is not none %}
                             {% if run.duration_seconds < 60 %}
                                 {{ "%.1f"|format(run.duration_seconds) }}s
@@ -170,16 +174,16 @@
                             -
                         {% endif %}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-300/80">
                         {% if run.products_found is not none %}
-                        <span class="{% if run.products_found > 0 %}text-green-600 font-medium{% endif %}">{{ run.products_found }}</span>
+                        <span class="{% if run.products_found > 0 %}text-emerald-300 font-semibold{% endif %}">{{ run.products_found }}</span>
                         {% else %}
                         -
                         {% endif %}
                     </td>
-                    <td class="px-6 py-4 text-sm text-red-600 max-w-xs truncate" title="{{ run.error_message or '' }}">
+                    <td class="px-6 py-4 text-sm text-red-200 max-w-xs truncate" title="{{ run.error_message or '' }}">
                         {% if run.error_message %}
-                        <a href="/scrapers/history/{{ run.id }}" class="hover:underline">
+                        <a href="/scrapers/history/{{ run.id }}" class="hover:text-white">
                             {{ run.error_message[:50] }}{% if run.error_message|length > 50 %}...{% endif %}
                         </a>
                         {% else %}
@@ -192,13 +196,13 @@
         </table>
         {% else %}
         <div class="text-center py-12">
-            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="mx-auto h-12 w-12 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
             </svg>
-            <h3 class="mt-2 text-sm font-medium text-gray-900">No scrape history</h3>
-            <p class="mt-1 text-sm text-gray-500">Run a scraper to see history here.</p>
+            <h3 class="mt-2 text-sm font-medium text-white">No scrape history</h3>
+            <p class="mt-1 text-sm text-slate-400">Run a scraper to see history here.</p>
             <div class="mt-6">
-                <a href="/scrapers" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                <a href="/scrapers" class="app-btn inline-flex items-center px-4 py-2 rounded-md text-sm font-semibold">
                     Go to Scrapers
                 </a>
             </div>

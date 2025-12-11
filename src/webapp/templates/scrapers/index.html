@@ -2,60 +2,111 @@
 
 {% block title %}Scrapers - Corastuff{% endblock %}
 
+{% block page_title %}Scrapers{% endblock %}
+{% block page_subtitle %}
+<p class="mt-1 text-sm text-slate-400">Run and monitor every data source at a glance</p>
+{% endblock %}
+{% block page_actions %}
+<a href="/scrapers/history" class="app-btn-secondary inline-flex items-center px-3 py-2 rounded-md text-sm font-medium">
+    <svg class="-ml-0.5 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+    </svg>
+    History
+</a>
+<a href="/scrapers/schedules" class="app-btn-secondary inline-flex items-center px-3 py-2 rounded-md text-sm font-medium">
+    <svg class="-ml-0.5 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+    </svg>
+    Schedules
+</a>
+<button
+    hx-post="/scrapers/run-all"
+    hx-target="#scrapers-tbody"
+    hx-swap="innerHTML"
+    class="app-btn inline-flex items-center px-4 py-2 rounded-md text-sm font-semibold">
+    <svg class="-ml-0.5 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+    </svg>
+    Run All
+</button>
+{% endblock %}
+
 {% block content %}
-<div class="px-4 sm:px-0">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold text-gray-900">Scraper Management</h1>
-        <div class="flex space-x-3">
-            <a href="/scrapers/history"
-                class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
-                </svg>
-                History
-            </a>
-            <a href="/scrapers/schedules"
-                class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                </svg>
-                Schedules
-            </a>
-            <button
-                hx-post="/scrapers/run-all"
-                hx-target="#scrapers-tbody"
-                hx-swap="innerHTML"
-                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                </svg>
-                Run All
-            </button>
+<div class="space-y-5">
+    {% set running = scrapers | selectattr('status', 'equalto', 'running') | list | length %}
+    {% set pending = scrapers | selectattr('status', 'equalto', 'pending') | list | length %}
+    {% set completed = scrapers | selectattr('status', 'equalto', 'completed') | list | length %}
+    <div class="grid grid-cols-3 gap-4">
+        <div class="app-card app-card-hover p-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <div class="text-[11px] uppercase tracking-widest text-slate-400">Running</div>
+                    <div class="mt-1 text-2xl font-semibold text-white">{{ running }}</div>
+                </div>
+                <div class="h-10 w-10 rounded-lg bg-emerald-500/15 text-emerald-300 grid place-items-center border border-emerald-500/30">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <div class="app-card app-card-hover p-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <div class="text-[11px] uppercase tracking-widest text-slate-400">Queued</div>
+                    <div class="mt-1 text-2xl font-semibold text-white">{{ pending }}</div>
+                </div>
+                <div class="h-10 w-10 rounded-lg bg-amber-500/15 text-amber-200 grid place-items-center border border-amber-500/30">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3"></path>
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <div class="app-card app-card-hover p-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <div class="text-[11px] uppercase tracking-widest text-slate-400">Completed</div>
+                    <div class="mt-1 text-2xl font-semibold text-white">{{ completed }}</div>
+                </div>
+                <div class="h-10 w-10 rounded-lg bg-brand/15 text-brand-soft grid place-items-center border border-brand/30">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                </div>
+            </div>
         </div>
     </div>
 
-    <div class="bg-white shadow rounded-lg overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
+    <div class="app-card overflow-hidden">
+        <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+            <div>
+                <h2 class="text-sm font-semibold text-white/90">Data Source Scrapers</h2>
+                <p class="text-xs text-slate-400 mt-0.5">Auto-refreshes while runs are active.</p>
+            </div>
+            <div class="text-xs text-slate-400">{{ scrapers|length }} total</div>
+        </div>
+        <table class="min-w-full divide-y divide-white/10 text-sm">
+            <thead class="bg-white/5">
                 <tr>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                         Scraper
                     </th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                         Status
                     </th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                         Last Run
                     </th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                         Products
                     </th>
-                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th scope="col" class="px-6 py-3 text-right text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                         Actions
                     </th>
                 </tr>
             </thead>
-            <tbody id="scrapers-tbody" class="bg-white divide-y divide-gray-200">
+            <tbody id="scrapers-tbody" class="divide-y divide-white/5">
                 {% for scraper in scrapers %}
                 {% include "scrapers/_row.html" %}
                 {% endfor %}
@@ -63,9 +114,16 @@
         </table>
     </div>
 
-    <div class="mt-6 text-sm text-gray-500">
-        <p><strong>Note:</strong> Jobs are queued and executed by the worker process. Run <code class="bg-gray-100 px-1 rounded">python -m src.cli --worker</code> to start the worker.</p>
-        <p class="mt-1">The page will automatically update when a scraper completes. Some scrapers may take 60+ seconds due to anti-bot measures.</p>
+    <div class="app-card p-4 text-sm text-slate-300/90 border border-white/10">
+        <p class="flex items-center gap-2">
+            <span class="inline-flex h-6 w-6 rounded-lg bg-white/5 border border-white/10 items-center justify-center text-slate-400">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m2-4h.01M12 18a6 6 0 100-12 6 6 0 000 12z"></path>
+                </svg>
+            </span>
+            Jobs run on the worker process. Start it with <code class="bg-white/10 border border-white/10 px-1.5 py-0.5 rounded font-mono text-xs text-white">python -m src.cli --worker</code>.
+        </p>
+        <p class="mt-2 text-xs text-slate-500">Scrapers can take 60+ seconds; rows update live while running.</p>
     </div>
 </div>
 {% endblock %}

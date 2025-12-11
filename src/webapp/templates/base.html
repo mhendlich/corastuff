@@ -4,8 +4,36 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Corastuff{% endblock %}</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
+
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        base: "#05070f",
+                        surface: "#0a0f1d",
+                        panel: "#0f172a",
+                        brand: {
+                            DEFAULT: "#8b5cf6",
+                            soft: "#a78bfa",
+                            cyan: "#22d3ee"
+                        }
+                    },
+                    fontFamily: {
+                        sans: ["Inter", "system-ui", "sans-serif"],
+                        display: ["Sora", "Inter", "system-ui", "sans-serif"]
+                    }
+                }
+            }
+        };
+    </script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="/static/app.css">
     <style>
         .htmx-indicator {
             opacity: 0;
@@ -19,46 +47,95 @@
         }
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen">
-    <nav class="bg-white shadow-sm border-b">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between h-16">
-                <div class="flex">
-                    <div class="flex-shrink-0 flex items-center">
-                        <a href="/" class="text-xl font-bold text-gray-900">Corastuff</a>
+<body class="app-body h-screen overflow-hidden antialiased">
+    <div class="flex h-full">
+        <aside id="sidebar" class="app-sidebar w-72 shrink-0 flex flex-col">
+            <div class="px-5 pt-5 pb-4 flex items-center justify-between">
+                <a href="/" class="flex items-center gap-3">
+                    <div class="h-9 w-9 rounded-xl bg-gradient-to-br from-brand to-brand-cyan grid place-items-center shadow-lg shadow-brand/40">
+                        <span class="font-display text-lg text-white">C</span>
                     </div>
-                    <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
-                        <a href="/" class="{% if request.url.path == '/' %}border-indigo-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            Dashboard
-                        </a>
-                        <a href="/products" class="{% if '/products' in request.url.path %}border-indigo-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            Products
-                        </a>
-                        <a href="/link" class="{% if request.url.path == '/link' %}border-indigo-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            Link Products
-                        </a>
-                        <a href="/prices" class="{% if '/prices' in request.url.path %}border-indigo-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            Prices
-                        </a>
-                        <a href="/scrapers" class="{% if request.url.path == '/scrapers' %}border-indigo-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            Scrapers
-                        </a>
+                    <div class="sidebar-title">
+                        <div class="font-display text-lg tracking-tight text-white">Corastuff</div>
+                        <div class="text-xs text-slate-400">Product Manager</div>
                     </div>
-                </div>
-                <div class="flex items-center">
-                    <a href="/logout" class="text-gray-500 hover:text-gray-700 text-sm font-medium">
-                        Logout
-                    </a>
+                </a>
+                <button id="sidebar-toggle" type="button"
+                        class="app-btn-secondary h-9 w-9 grid place-items-center rounded-lg"
+                        title="Collapse sidebar (Ctrl+B)">
+                    <svg class="h-4 w-4 text-slate-200" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M3 5h14v2H3V5zm0 4h10v2H3V9zm0 4h14v2H3v-2z"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <nav class="px-3 py-2 space-y-1 text-sm">
+                <a href="/" class="app-nav-item {% if request.url.path == '/' %}active{% endif %}">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l9-9 9 9v8a2 2 0 01-2 2H5a2 2 0 01-2-2v-8z"></path>
+                    </svg>
+                    <span class="nav-label">Dashboard</span>
+                </a>
+                <a href="/products" class="app-nav-item {% if '/products' in request.url.path %}active{% endif %}">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                    </svg>
+                    <span class="nav-label">Products</span>
+                </a>
+                <a href="/link" class="app-nav-item {% if request.url.path == '/link' %}active{% endif %}">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
+                    </svg>
+                    <span class="nav-label">Link Products</span>
+                </a>
+                <a href="/prices" class="app-nav-item {% if '/prices' in request.url.path %}active{% endif %}">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-3.866 0-7 1.79-7 4s3.134 4 7 4 7-1.79 7-4-3.134-4-7-4zm0 0V4m0 8v8"></path>
+                    </svg>
+                    <span class="nav-label">Prices</span>
+                </a>
+                <a href="/scrapers" class="app-nav-item {% if request.url.path.startswith('/scrapers') %}active{% endif %}">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                    </svg>
+                    <span class="nav-label">Scrapers</span>
+                </a>
+            </nav>
+
+            <div class="mt-auto px-4 py-4 border-t border-white/10">
+                <a href="/logout" class="app-btn-secondary w-full inline-flex items-center justify-center px-4 py-2 rounded-md text-sm">
+                    Logout
+                </a>
+                <div class="mt-3 text-[11px] text-slate-500">
+                    Tip: toggle sidebar with <span class="font-mono">Ctrl+B</span>
                 </div>
             </div>
-        </div>
-    </nav>
+        </aside>
 
-    <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        {% block content %}{% endblock %}
-    </main>
+        <section class="flex-1 min-w-0 flex flex-col">
+            <header class="app-topbar px-6 py-5 flex items-start justify-between gap-6">
+                <div class="min-w-0">
+                    {% block breadcrumbs %}{% endblock %}
+                    <h1 class="font-display text-2xl tracking-tight text-white truncate">
+                        {% block page_title %}{% endblock %}
+                    </h1>
+                    {% block page_subtitle %}{% endblock %}
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                    {% block page_actions %}{% endblock %}
+                </div>
+            </header>
+
+            <main class="flex-1 overflow-y-auto p-6">
+                <div class="max-w-[1600px] mx-auto fade-in">
+                    {% block content %}{% endblock %}
+                </div>
+            </main>
+        </section>
+    </div>
 
     {% block scripts %}{% endblock %}
+    <script src="/static/app.js"></script>
 
     <script>
         // Dev auto-refresh: SSE connection detects server restarts

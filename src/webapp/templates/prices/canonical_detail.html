@@ -2,102 +2,102 @@
 
 {% block title %}{{ canonical.name }} - Price Comparison{% endblock %}
 
+{% block breadcrumbs %}
+<a href="/prices" class="text-xs text-slate-500 hover:text-slate-200">&larr; Prices</a>
+{% endblock %}
+{% block page_title %}{{ canonical.name }}{% endblock %}
+{% block page_subtitle %}
+{% if canonical.description %}
+<p class="mt-1 text-sm text-slate-400">{{ canonical.description }}</p>
+{% else %}
+<p class="mt-1 text-sm text-slate-400">{{ price_data|length }} linked sources</p>
+{% endif %}
+{% endblock %}
+
 {% block content %}
-<div class="px-4 sm:px-0">
-    <div class="mb-6">
-        <a href="/prices" class="text-indigo-600 hover:text-indigo-900 text-sm">&larr; Back to Prices</a>
-    </div>
-
-    <div class="bg-white shadow rounded-lg p-6 mb-6">
-        <h1 class="text-2xl font-bold text-gray-900">{{ canonical.name }}</h1>
-        {% if canonical.description %}
-        <p class="text-gray-600 mt-2">{{ canonical.description }}</p>
-        {% endif %}
-        <p class="text-sm text-gray-500 mt-2">{{ price_data|length }} linked sources</p>
-    </div>
-
+<div class="space-y-6">
     {% if price_data %}
     {% set prices_with_values = price_data | selectattr('current_price') | list %}
     {% set best_price = prices_with_values | map(attribute='current_price') | min if prices_with_values else none %}
 
     <!-- Current Prices Comparison -->
-    <div class="bg-white shadow rounded-lg p-6 mb-6">
-        <h2 class="text-lg font-semibold text-gray-900 mb-4">Current Prices</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div class="app-card p-6">
+        <h2 class="text-sm font-semibold tracking-wide text-white/90 mb-4">Current Prices</h2>
+        <div class="grid grid-cols-3 gap-4">
             {% for pd in price_data %}
             {% set is_best = pd.current_price and pd.current_price == best_price %}
-            <div class="border rounded-lg p-4 relative
-                {% if is_best %}border-green-500 bg-green-50 ring-2 ring-green-500
-                {% elif pd.source == 'bergzeit' %}border-green-200 bg-green-50
-                {% elif pd.source == 'sportscheck' %}border-blue-200 bg-blue-50
-                {% elif pd.source == 'galaxus_ch' %}border-purple-200 bg-purple-50
-                {% elif pd.source == 'galaxus_de' %}border-pink-200 bg-pink-50
-                {% elif pd.source == 'kaufland' %}border-orange-200 bg-orange-50
-                {% else %}border-gray-200 bg-gray-50{% endif %}">
+            <div class="app-card app-card-hover p-4 relative border
+                {% if is_best %}border-emerald-500/60 bg-emerald-500/10 ring-2 ring-emerald-500/40
+                {% elif pd.source == 'bergzeit' %}border-green-500/40 bg-green-500/10
+                {% elif pd.source == 'sportscheck' %}border-blue-500/40 bg-blue-500/10
+                {% elif pd.source == 'galaxus_ch' %}border-purple-500/40 bg-purple-500/10
+                {% elif pd.source == 'galaxus_de' %}border-pink-500/40 bg-pink-500/10
+                {% elif pd.source == 'kaufland' %}border-orange-500/40 bg-orange-500/10
+                {% else %}border-white/10 bg-white/5{% endif %}">
                 {% if is_best %}
-                <div class="absolute -top-2 -right-2 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow">
+                <div class="absolute -top-2 -right-2 bg-emerald-500 text-white text-[10px] font-bold px-2 py-1 rounded-full shadow">
                     BEST PRICE
                 </div>
                 {% endif %}
                 <div class="flex justify-between items-start">
-                    <span class="text-sm font-medium text-gray-700">{{ pd.source }}</span>
+                    <span class="text-sm font-medium text-slate-200">{{ pd.source }}</span>
                     {% if pd.url %}
-                    <a href="{{ pd.url }}" target="_blank" class="text-gray-400 hover:text-gray-600 text-xs">Visit</a>
+                    <a href="{{ pd.url }}" target="_blank" class="text-slate-400 hover:text-slate-200 text-xs">Visit</a>
                     {% endif %}
                 </div>
-                <div class="text-2xl font-bold mt-2 {% if is_best %}text-green-700{% else %}text-gray-900{% endif %}">
+                <div class="text-2xl font-bold mt-2 {% if is_best %}text-emerald-300{% else %}text-white{% endif %}">
                     {% if pd.current_price %}
                     {{ "%.2f"|format(pd.current_price) }} {{ pd.currency or 'EUR' }}
                     {% else %}
                     -
                     {% endif %}
                 </div>
-                <div class="text-xs text-gray-500 mt-1 truncate" title="{{ pd.name }}">{{ pd.name }}</div>
+                <div class="text-xs text-slate-400 mt-1 truncate" title="{{ pd.name }}">{{ pd.name }}</div>
             </div>
             {% endfor %}
         </div>
     </div>
 
     <!-- Price History Chart -->
-    <div class="bg-white shadow rounded-lg p-6 mb-6">
-        <h2 class="text-lg font-semibold text-gray-900 mb-4">Price History Comparison</h2>
+    <div class="app-card p-6">
+        <h2 class="text-sm font-semibold tracking-wide text-white/90 mb-4">Price History Comparison</h2>
         <div class="h-80">
             <canvas id="priceChart"></canvas>
         </div>
     </div>
 
     <!-- Price History Table -->
-    <div class="bg-white shadow rounded-lg overflow-hidden">
-        <div class="px-6 py-4 border-b border-gray-200">
-            <h2 class="text-lg font-semibold text-gray-900">Detailed History by Source</h2>
+    <div class="app-card overflow-hidden">
+        <div class="px-6 py-4 border-b border-white/10">
+            <h2 class="text-sm font-semibold tracking-wide text-white/90">Detailed History by Source</h2>
         </div>
         {% for pd in price_data %}
-        <div class="border-b border-gray-200 last:border-b-0">
-            <div class="px-6 py-3 bg-gray-50 flex justify-between items-center">
-                <span class="font-medium text-gray-700">{{ pd.source }}</span>
-                <a href="/prices/product/{{ pd.source }}/{{ pd.item_id }}" class="text-indigo-600 hover:text-indigo-900 text-sm">
+        <div class="border-b border-white/10 last:border-b-0">
+            <div class="px-6 py-3 bg-white/5 flex justify-between items-center">
+                <span class="font-medium text-slate-200">{{ pd.source }}</span>
+                <a href="/prices/product/{{ pd.source }}/{{ pd.item_id }}" class="text-brand-cyan hover:text-white text-sm">
                     View Full History
                 </a>
             </div>
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
+            <table class="min-w-full divide-y divide-white/10 text-sm">
+                <thead class="bg-white/5">
                     <tr>
-                        <th class="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                        <th class="px-6 py-2 text-right text-xs font-medium text-gray-500 uppercase">Price</th>
+                        <th class="px-6 py-2 text-left text-[11px] font-semibold text-slate-400 uppercase">Date</th>
+                        <th class="px-6 py-2 text-right text-[11px] font-semibold text-slate-400 uppercase">Price</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-200">
+                <tbody class="divide-y divide-white/5">
                     {% for h in pd.history[:5] %}
-                    <tr class="hover:bg-gray-50">
-                        <td class="px-6 py-2 text-sm text-gray-600">{{ h.scraped_at[:16].replace('T', ' ') }}</td>
-                        <td class="px-6 py-2 text-right text-sm font-medium text-gray-900">
+                    <tr class="hover:bg-white/5">
+                        <td class="px-6 py-2 text-sm text-slate-300">{{ h.scraped_at[:16].replace('T', ' ') }}</td>
+                        <td class="px-6 py-2 text-right text-sm font-medium text-white">
                             {{ "%.2f"|format(h.price) }} {{ h.currency or 'EUR' }}
                         </td>
                     </tr>
                     {% endfor %}
                     {% if pd.history|length > 5 %}
                     <tr>
-                        <td colspan="2" class="px-6 py-2 text-center text-sm text-gray-500">
+                        <td colspan="2" class="px-6 py-2 text-center text-sm text-slate-400">
                             ... {{ pd.history|length - 5 }} more records
                         </td>
                     </tr>
@@ -108,9 +108,9 @@
         {% endfor %}
     </div>
     {% else %}
-    <div class="bg-white shadow rounded-lg p-6 text-center text-gray-500">
+    <div class="app-card p-6 text-center text-slate-400">
         No products linked to this canonical product yet.
-        <a href="/link" class="text-indigo-600 hover:text-indigo-900 ml-1">Link products</a>
+        <a href="/link" class="text-brand-cyan hover:text-white ml-1">Link products</a>
     </div>
     {% endif %}
 </div>
@@ -207,7 +207,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     },
                     ticks: {
-                        maxTicksLimit: 8
+                        maxTicksLimit: 8,
+                        color: '#94a3b8'
+                    },
+                    grid: {
+                        color: 'rgba(148, 163, 184, 0.12)'
                     }
                 },
                 y: {
@@ -215,7 +219,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     ticks: {
                         callback: function(value) {
                             return value.toFixed(2) + ' EUR';
-                        }
+                        },
+                        color: '#94a3b8'
+                    },
+                    grid: {
+                        color: 'rgba(148, 163, 184, 0.12)'
                     }
                 }
             }

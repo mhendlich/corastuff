@@ -2,62 +2,65 @@
 
 {% block title %}Dashboard - Corastuff{% endblock %}
 
+{% block page_title %}Dashboard{% endblock %}
+
+{% block page_subtitle %}
+<p class="mt-1 text-sm text-slate-400">Overview of your product linking status</p>
+{% endblock %}
+
 {% block content %}
-<div class="px-4 sm:px-0">
-    <h1 class="text-2xl font-semibold text-gray-900">Dashboard</h1>
-    <p class="mt-1 text-sm text-gray-600">Overview of your product linking status</p>
-</div>
+<div class="space-y-6">
+    <div id="stats-container">
+        {% include "partials/_stats.html" %}
+    </div>
 
-<div class="mt-6" id="stats-container">
-    {% include "partials/_stats.html" %}
-</div>
-
-<div class="mt-8">
-    <h2 class="text-lg font-medium text-gray-900 mb-4">Data Sources</h2>
-    <div class="bg-white shadow overflow-hidden sm:rounded-md">
-        <ul role="list" class="divide-y divide-gray-200">
+    <section class="app-card overflow-hidden">
+        <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+            <div>
+                <h2 class="text-sm font-semibold tracking-wide text-white/90">Data Sources</h2>
+                <p class="text-xs text-slate-400 mt-0.5">Live scraper inventory and last run</p>
+            </div>
+            <div class="text-xs text-slate-400">{{ sources|length }} sources</div>
+        </div>
+        <ul role="list" class="divide-y divide-white/5">
             {% for source in sources %}
-            <li>
-                <div class="px-4 py-4 sm:px-6">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-sm font-medium text-indigo-600 truncate">{{ source }}</p>
-                            {% if last_scrape_times and last_scrape_times.get(source) %}
-                            <p class="text-xs text-gray-500 mt-1">
-                                Last scraped: {{ last_scrape_times[source][:16].replace('T', ' ') }}
-                            </p>
-                            {% endif %}
-                        </div>
-                        <div class="ml-2 flex-shrink-0 flex items-center gap-2">
-                            {% if last_scrape_times and last_scrape_times.get(source) %}
-                            <span class="text-xs text-gray-400" id="ago-{{ source }}"></span>
-                            {% endif %}
-                            <p class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                                Active
-                            </p>
-                        </div>
+            <li class="px-6 py-4 flex items-center justify-between app-card-hover">
+                <div>
+                    <div class="text-sm font-medium text-white">{{ source }}</div>
+                    {% if last_scrape_times and last_scrape_times.get(source) %}
+                    <div class="text-xs text-slate-400 mt-1">
+                        Last scraped: {{ last_scrape_times[source][:16].replace('T', ' ') }}
                     </div>
+                    {% endif %}
+                </div>
+                <div class="flex items-center gap-3">
+                    {% if last_scrape_times and last_scrape_times.get(source) %}
+                    <span class="text-xs text-slate-500" id="ago-{{ source }}"></span>
+                    {% endif %}
+                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                        Active
+                    </span>
                 </div>
             </li>
             {% else %}
-            <li>
-                <div class="px-4 py-4 sm:px-6 text-sm text-gray-500">
-                    No sources found. Run the scrapers first.
-                </div>
+            <li class="px-6 py-10 text-center text-sm text-slate-400">
+                No sources found. Run the scrapers first.
             </li>
             {% endfor %}
         </ul>
-    </div>
-</div>
+    </section>
 
-<!-- Danger Zone -->
-<div class="mt-8" id="reset-section">
-    <h2 class="text-lg font-medium text-red-600 mb-4">Danger Zone</h2>
-    <div class="bg-white border border-red-200 rounded-lg p-6">
-        <div class="flex items-start justify-between">
+    <section class="app-card border border-red-500/30 overflow-hidden" id="reset-section">
+        <div class="px-6 py-4 border-b border-red-500/20 bg-red-500/5 flex items-center justify-between">
             <div>
-                <h3 class="text-sm font-medium text-gray-900">Reset All Data</h3>
-                <p class="mt-1 text-sm text-gray-500">
+                <h2 class="text-sm font-semibold tracking-wide text-red-200">Danger Zone</h2>
+                <p class="text-xs text-red-200/70 mt-0.5">Irreversible operations</p>
+            </div>
+        </div>
+        <div class="p-6 flex items-start justify-between gap-6">
+            <div>
+                <h3 class="text-sm font-medium text-white">Reset All Data</h3>
+                <p class="mt-1 text-sm text-slate-300/80 max-w-2xl">
                     Permanently delete all products, canonical products, links, and scraper schedules.
                     This action cannot be undone.
                 </p>
@@ -65,11 +68,11 @@
             <button
                 type="button"
                 onclick="confirmReset()"
-                class="ml-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
-                Reset All
+                class="inline-flex items-center px-4 py-2 rounded-md text-sm font-semibold bg-red-500/90 hover:bg-red-500 text-white shadow shadow-red-500/40">
+                Reset Everything
             </button>
         </div>
-    </div>
+    </section>
 </div>
 {% endblock %}
 
