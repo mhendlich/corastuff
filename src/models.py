@@ -15,6 +15,8 @@ class Product:
     currency: str | None
     url: str | None
     item_id: str | None
+    image: bytes | None = None
+    image_mime: str | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -24,6 +26,9 @@ class Product:
             "currency": self.currency,
             "url": self.url,
             "item_id": self.item_id,
+            # Intentionally skip raw image bytes to avoid bloating JSON exports.
+            "image": None,
+            "image_mime": self.image_mime,
         }
 
 

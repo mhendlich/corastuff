@@ -632,6 +632,8 @@ async def canonical_price_detail(request: Request, canonical_id: int, _: str = D
     price_data = []
     for link in links:
         history = db.get_product_price_history(link["source"], link["source_item_id"])
+        image_data = link.get("image_data") or (history[0].get("image_data") if history else None)
+        image_mime = link.get("image_mime") or (history[0].get("image_mime") if history else None)
         price_data.append({
             "source": link["source"],
             "item_id": link["source_item_id"],
@@ -639,6 +641,8 @@ async def canonical_price_detail(request: Request, canonical_id: int, _: str = D
             "currency": link["currency"],
             "url": link["url"],
             "name": link["name"],
+            "image_data": image_data,
+            "image_mime": image_mime,
             "history": history,
         })
 

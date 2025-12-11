@@ -176,6 +176,7 @@ class KauflandScraper(BaseScraper):
                     currency=currency,
                     url=url,
                     item_id=item_id,
+                    image=None,
                 ))
 
             except Exception as e:
@@ -340,6 +341,7 @@ class KauflandScraper(BaseScraper):
                     currency=currency,
                     url=url,
                     item_id=item_id,
+                    image=None,
                 ))
 
             except Exception as e:

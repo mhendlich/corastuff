@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import sqlite3
+import hashlib
 from datetime import datetime
 from pathlib import Path
 
-from .models import ScrapeResult
+from .models import Product, ScrapeResult
 
 
 class ProductDatabase:
@@ -23,15 +24,16 @@ class ProductDatabase:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS products (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    source TEXT NOT NULL,
-                    scraped_at TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    price REAL,
-                    currency TEXT,
-                    url TEXT,
-                    item_id TEXT
-                )
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT NOT NULL,
+                scraped_at TEXT NOT NULL,
+                name TEXT NOT NULL,
+                price REAL,
+                currency TEXT,
+                url TEXT,
+                item_id TEXT,
+                product_key TEXT
+            )
             """)
             # Index for efficient querying by source and time
             conn.execute("""
@@ -43,6 +45,33 @@ class ProductDatabase:
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_source_item
                 ON products (source, item_id)
+            """)
+
+            # Ensure product_key column exists for older databases
+            try:
+                conn.execute("ALTER TABLE products ADD COLUMN product_key TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
+            # Latest product images per source/product
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS product_images (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source TEXT NOT NULL,
+                    product_key TEXT NOT NULL,
+                    item_id TEXT,
+                    url TEXT,
+                    image_data BLOB,
+                    image_hash TEXT,
+                    image_mime TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(source, product_key)
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_product_images_source
+                ON product_images (source)
             """)
 
             # Canonical products - master product entities
@@ -149,10 +178,12 @@ class ProductDatabase:
 
         with sqlite3.connect(self.db_path) as conn:
             for product in result.products:
+                product_key = self._build_product_key(product)
+                product_key_db = product_key or None
                 conn.execute(
                     """
-                    INSERT INTO products (source, scraped_at, name, price, currency, url, item_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO products (source, scraped_at, name, price, currency, url, item_id, product_key)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         result.source,
@@ -162,8 +193,10 @@ class ProductDatabase:
                         product.currency,
                         product.url,
                         product.item_id,
+                        product_key_db,
                     ),
                 )
+                self._upsert_product_image(conn, result.source, product, product_key)
             conn.commit()
 
         print(f"[db] Saved {len(result.products)} products from '{result.source}' to {self.db_path}")
@@ -220,9 +253,12 @@ class ProductDatabase:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 """
-                SELECT *
-                FROM products
-                WHERE source = ? AND item_id = ?
+                SELECT p.*, pi.image_data, pi.image_mime, pi.updated_at as image_updated_at
+                FROM products p
+                LEFT JOIN product_images pi
+                    ON pi.source = p.source
+                    AND pi.product_key = COALESCE(p.product_key, p.item_id, p.url, p.name)
+                WHERE p.source = ? AND p.item_id = ?
                 ORDER BY scraped_at DESC
                 """,
                 (source, item_id),
@@ -332,10 +368,11 @@ class ProductDatabase:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 """
-                SELECT pl.*, p.name, p.price, p.currency, p.url
+                SELECT pl.*, p.name, p.price, p.currency, p.url,
+                       pi.image_data, pi.image_mime, pi.updated_at as image_updated_at
                 FROM product_links pl
                 LEFT JOIN (
-                    SELECT source, item_id, name, price, currency, url,
+                    SELECT source, item_id, name, price, currency, url, product_key,
                            ROW_NUMBER() OVER (PARTITION BY source, item_id ORDER BY scraped_at DESC) as rn
                     FROM products
                 ) p ON pl.source = p.source
@@ -344,6 +381,9 @@ class ProductDatabase:
                         OR (pl.source_item_id IN ('', 'None') AND p.item_id IS NULL)
                     )
                     AND p.rn = 1
+                LEFT JOIN product_images pi
+                    ON pi.source = pl.source
+                    AND pi.product_key = COALESCE(p.product_key, pl.source_item_id, p.url, p.name)
                 WHERE pl.canonical_id = ?
                 ORDER BY pl.source
                 """,
@@ -375,9 +415,13 @@ class ProductDatabase:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 """
-                SELECT p.*, pl.canonical_id
+                SELECT p.*, pl.canonical_id,
+                       pi.image_data, pi.image_mime, pi.updated_at as image_updated_at
                 FROM products p
                 LEFT JOIN product_links pl ON p.source = pl.source AND p.item_id = pl.source_item_id
+                LEFT JOIN product_images pi
+                    ON pi.source = p.source
+                    AND pi.product_key = COALESCE(p.product_key, p.item_id, p.url, p.name)
                 WHERE p.scraped_at = (
                     SELECT MAX(p2.scraped_at) FROM products p2 WHERE p2.source = p.source
                 )
@@ -392,9 +436,12 @@ class ProductDatabase:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 """
-                SELECT p.*
+                SELECT p.*, pi.image_data, pi.image_mime, pi.updated_at as image_updated_at
                 FROM products p
                 LEFT JOIN product_links pl ON p.source = pl.source AND p.item_id = pl.source_item_id
+                LEFT JOIN product_images pi
+                    ON pi.source = p.source
+                    AND pi.product_key = COALESCE(p.product_key, p.item_id, p.url, p.name)
                 WHERE pl.id IS NULL
                 AND p.scraped_at = (
                     SELECT MAX(p2.scraped_at) FROM products p2 WHERE p2.source = p.source
@@ -410,10 +457,14 @@ class ProductDatabase:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 """
-                SELECT p.*, pl.canonical_id, cp.name as canonical_name
+                SELECT p.*, pl.canonical_id, cp.name as canonical_name,
+                       pi.image_data, pi.image_mime, pi.updated_at as image_updated_at
                 FROM products p
                 JOIN product_links pl ON p.source = pl.source AND p.item_id = pl.source_item_id
                 JOIN canonical_products cp ON pl.canonical_id = cp.id
+                LEFT JOIN product_images pi
+                    ON pi.source = p.source
+                    AND pi.product_key = COALESCE(p.product_key, p.item_id, p.url, p.name)
                 WHERE p.scraped_at = (
                     SELECT MAX(p2.scraped_at) FROM products p2 WHERE p2.source = p.source
                 )
@@ -481,12 +532,14 @@ class ProductDatabase:
                 "products": conn.execute("SELECT COUNT(*) FROM products").fetchone()[0],
                 "canonical_products": conn.execute("SELECT COUNT(*) FROM canonical_products").fetchone()[0],
                 "product_links": conn.execute("SELECT COUNT(*) FROM product_links").fetchone()[0],
+                "product_images": conn.execute("SELECT COUNT(*) FROM product_images").fetchone()[0],
             }
 
             # Delete all data (product_links will cascade from canonical_products)
             conn.execute("DELETE FROM product_links")
             conn.execute("DELETE FROM canonical_products")
             conn.execute("DELETE FROM products")
+            conn.execute("DELETE FROM product_images")
 
             # Also clear scraper schedules if table exists
             try:
@@ -513,6 +566,67 @@ class ProductDatabase:
                 pass  # Table doesn't exist yet
 
             conn.commit()
+
+    def _build_product_key(self, product: Product) -> str:
+        """Return a stable key for identifying a product across scrapes."""
+        for value in (product.item_id, product.url, product.name):
+            if value:
+                cleaned = str(value).strip()
+                if cleaned.lower() in {"", "none", "null"}:
+                    continue
+                return cleaned
+        return ""
+
+    def _upsert_product_image(self, conn: sqlite3.Connection, source: str, product: Product, product_key: str) -> None:
+        """Store or update the latest image for a product if provided."""
+        if not product.image or not product_key:
+            return
+
+        # Normalize to bytes for hashing/storage
+        if isinstance(product.image, str):
+            image_bytes = product.image.encode("utf-8")
+        elif isinstance(product.image, memoryview):
+            image_bytes = product.image.tobytes()
+        else:
+            image_bytes = bytes(product.image)
+        image_hash = hashlib.sha256(image_bytes).hexdigest()
+        mime_type = product.image_mime or "image/jpeg"
+        now = datetime.utcnow().isoformat()
+
+        existing = conn.execute(
+            "SELECT image_hash FROM product_images WHERE source = ? AND product_key = ?",
+            (source, product_key),
+        ).fetchone()
+
+        if existing:
+            existing_hash = existing[0]
+            if existing_hash != image_hash:
+                conn.execute(
+                    """
+                    UPDATE product_images
+                    SET image_data = ?, image_hash = ?, image_mime = ?, item_id = ?, url = ?, updated_at = ?
+                    WHERE source = ? AND product_key = ?
+                    """,
+                    (image_bytes, image_hash, mime_type, product.item_id, product.url, now, source, product_key),
+                )
+            else:
+                # Keep metadata fresh even if the image itself is unchanged
+                conn.execute(
+                    """
+                    UPDATE product_images
+                    SET image_mime = ?, item_id = ?, url = ?, updated_at = ?
+                    WHERE source = ? AND product_key = ?
+                    """,
+                    (mime_type, product.item_id, product.url, now, source, product_key),
+                )
+        else:
+            conn.execute(
+                """
+                INSERT INTO product_images (source, product_key, item_id, url, image_data, image_hash, image_mime, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (source, product_key, product.item_id, product.url, image_bytes, image_hash, mime_type, now, now),
+            )
 
         print(f"[db] Reset database: {counts}")
         return counts
@@ -653,9 +767,13 @@ class ProductDatabase:
                             ELSE NULL END as price_change,
                        CASE WHEN pp.prev_price IS NOT NULL AND pp.prev_price > 0 AND cp.price IS NOT NULL
                             THEN ((cp.price - pp.prev_price) / pp.prev_price) * 100
-                            ELSE NULL END as price_change_pct
+                            ELSE NULL END as price_change_pct,
+                       pi.image_data, pi.image_mime, pi.updated_at as image_updated_at
                 FROM current_products cp
                 LEFT JOIN previous_products pp ON cp.source = pp.source AND cp.item_id = pp.item_id
+                LEFT JOIN product_images pi
+                    ON pi.source = cp.source
+                    AND pi.product_key = COALESCE(cp.product_key, cp.item_id, cp.url, cp.name)
                 ORDER BY cp.source, cp.name
                 """
             )

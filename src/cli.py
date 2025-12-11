@@ -3,6 +3,8 @@
 
 import asyncio
 import argparse
+import os
+import shutil
 import subprocess
 import sys
 import time
@@ -64,14 +66,68 @@ def run_serve() -> int:
     processes: dict[str, subprocess.Popen] = {}
     shutdown_event = threading.Event()
 
+    def pid_running(pid: int) -> bool:
+        """Check if a PID is still alive."""
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            # Process exists but we may not have permission to signal it.
+            return True
+        return True
+
+    def find_pids_on_port(port: int) -> set[int]:
+        """Return PIDs listening on the given port using available system tools."""
+        commands = []
+        if shutil.which("lsof"):
+            commands.append(["lsof", "-i", f":{port}", "-t"])
+        if shutil.which("fuser"):
+            commands.append(["fuser", f"{port}/tcp"])
+
+        pids: set[int] = set()
+        for cmd in commands:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            for token in result.stdout.split():
+                try:
+                    pids.add(int(token))
+                except ValueError:
+                    continue
+        return pids
+
+    def ensure_port_free(port: int) -> None:
+        """Kill any process occupying the given port to free it for the webserver."""
+        pids = find_pids_on_port(port)
+        if not pids:
+            return
+
+        pid_list = ", ".join(str(pid) for pid in sorted(pids))
+        print(f"[webserver] Port {port} in use by PID(s): {pid_list}. Terminating...")
+
+        for pid in pids:
+            for sig in (signal.SIGTERM, signal.SIGKILL):
+                try:
+                    os.kill(pid, sig)
+                except ProcessLookupError:
+                    break
+                except PermissionError:
+                    print(f"[webserver] Permission denied killing PID {pid}")
+                    break
+                time.sleep(0.2)
+                if not pid_running(pid):
+                    break
+
+        time.sleep(0.2)  # Give the OS a brief moment to release the port
+
     def start_webserver() -> subprocess.Popen:
         """Start the uvicorn webserver."""
+        ensure_port_free(8010)
         return subprocess.Popen(
             [
                 sys.executable, "-m", "uvicorn",
                 "src.webapp.app:app",
                 "--host", "0.0.0.0",
-                "--port", "8011",
+                "--port", "8010",
                 "--reload",
             ],
             cwd=Path(__file__).parent.parent,
@@ -114,7 +170,7 @@ def run_serve() -> int:
     signal.signal(signal.SIGTERM, shutdown)
 
     print("=" * 60)
-    print("Starting webserver (port 8011) and worker")
+    print("Starting webserver (port 8010) and worker")
     print("Press Ctrl+C to stop")
     print("=" * 60)
 

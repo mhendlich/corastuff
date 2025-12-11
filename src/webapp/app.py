@@ -1,5 +1,6 @@
 """FastAPI application factory."""
 
+import base64
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -13,6 +14,20 @@ from .routes import router
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+def image_data_uri(data: bytes | None, mime: str | None = None) -> str | None:
+    """Convert raw image bytes into a data URI for inline display."""
+    if not data:
+        return None
+
+    try:
+        encoded = base64.b64encode(data).decode("ascii")
+    except Exception:
+        return None
+
+    mime_type = mime or "image/jpeg"
+    return f"data:{mime_type};base64,{encoded}"
 
 
 def create_app(db: ProductDatabase | None = None, auto_start_scheduler: bool = True) -> FastAPI:
@@ -51,6 +66,7 @@ def create_app(db: ProductDatabase | None = None, auto_start_scheduler: bool = T
 
     # Setup templates
     app.state.templates = Jinja2Templates(directory=TEMPLATES_DIR)
+    app.state.templates.env.filters["image_data_uri"] = image_data_uri
 
     # Mount static files if directory exists
     if STATIC_DIR.exists():

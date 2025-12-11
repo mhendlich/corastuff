@@ -45,6 +45,17 @@
                     <a href="{{ pd.url }}" target="_blank" class="text-slate-400 hover:text-slate-200 text-xs">Visit</a>
                     {% endif %}
                 </div>
+                {% set img_src = pd.image_data|image_data_uri(pd.image_mime) %}
+                {% if not img_src and pd.history %}
+                    {% set img_src = pd.history[0].image_data|image_data_uri(pd.history[0].image_mime) %}
+                {% endif %}
+                <div class="h-28 w-full rounded-md overflow-hidden bg-white/5 border border-white/10 my-3 flex items-center justify-center">
+                    {% if img_src %}
+                    <img src="{{ img_src }}" alt="{{ pd.name }}" class="h-full w-full object-cover">
+                    {% else %}
+                    <span class="text-[11px] text-slate-400">No image</span>
+                    {% endif %}
+                </div>
                 <div class="text-2xl font-bold mt-2 {% if is_best %}text-emerald-300{% else %}text-white{% endif %}">
                     {% if pd.current_price %}
                     {{ "%.2f"|format(pd.current_price) }} {{ pd.currency or 'EUR' }}

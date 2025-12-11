@@ -119,8 +119,18 @@
                         {% for product in products %}
                         <tr class="hover:bg-white/5 product-row" data-source="{{ source }}" data-name="{{ product.name | lower }}" data-price="{{ product.price or 0 }}">
                             <td class="px-4 py-2">
-                                <div class="text-sm text-white truncate max-w-md" title="{{ product.name }}">
-                                    {{ product.name }}
+                                {% set img_src = product.image_data|image_data_uri(product.image_mime) %}
+                                <div class="flex items-center gap-3">
+                                    <div class="h-12 w-12 rounded-md overflow-hidden bg-white/5 border border-white/10 flex items-center justify-center">
+                                        {% if img_src %}
+                                        <img src="{{ img_src }}" alt="{{ product.name }}" class="h-full w-full object-cover">
+                                        {% else %}
+                                        <span class="text-[11px] text-slate-400 px-2 text-center leading-tight">No image</span>
+                                        {% endif %}
+                                    </div>
+                                    <div class="text-sm text-white truncate max-w-md" title="{{ product.name }}">
+                                        {{ product.name }}
+                                    </div>
                                 </div>
                             </td>
                             <td class="px-4 py-2 text-right">
@@ -204,6 +214,14 @@
                             {% endif %}
                         {% endif %}
                     </div>
+                    {% endif %}
+                </div>
+                {% set img_src = product.image_data|image_data_uri(product.image_mime) %}
+                <div class="h-36 w-full rounded-md overflow-hidden bg-white/5 border border-white/10 mb-3 flex items-center justify-center">
+                    {% if img_src %}
+                    <img src="{{ img_src }}" alt="{{ product.name }}" class="h-full w-full object-cover">
+                    {% else %}
+                    <span class="text-xs text-slate-400">No image yet</span>
                     {% endif %}
                 </div>
                 <h3 class="text-sm font-medium text-white mb-2 line-clamp-2">{{ product.name }}</h3>
