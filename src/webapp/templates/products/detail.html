@@ -34,6 +34,9 @@
 <div class="mt-6">
     <h2 class="text-lg font-medium text-gray-900 mb-4">Linked Source Products ({{ links|length }})</h2>
 
+    {% set links_with_prices = links | selectattr('price') | list %}
+    {% set best_price = links_with_prices | map(attribute='price') | min if links_with_prices else none %}
+
     {% if links %}
     <div class="bg-white shadow overflow-hidden sm:rounded-lg">
         <table class="min-w-full divide-y divide-gray-200">
@@ -48,7 +51,8 @@
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
                 {% for link in links %}
-                <tr>
+                {% set is_best = link.price and link.price == best_price %}
+                <tr class="{% if is_best %}bg-green-50{% endif %}">
                     <td class="px-6 py-4 whitespace-nowrap">
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
                             {{ link.source }}
@@ -62,7 +66,12 @@
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         {% if link.price %}
-                        <span class="text-sm font-medium text-gray-900">{{ "%.2f"|format(link.price) }} {{ link.currency or '' }}</span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-medium {% if is_best %}text-green-700{% else %}text-gray-900{% endif %}">{{ "%.2f"|format(link.price) }} {{ link.currency or '' }}</span>
+                            {% if is_best %}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-green-500 text-white">BEST</span>
+                            {% endif %}
+                        </div>
                         {% else %}
                         <span class="text-sm text-gray-400">N/A</span>
                         {% endif %}
@@ -84,14 +93,16 @@
         </table>
     </div>
 
-    {% if links %}
+    {% if links_with_prices %}
     <div class="mt-4 bg-white shadow sm:rounded-lg p-4">
         <h3 class="text-sm font-medium text-gray-900 mb-2">Price Comparison</h3>
         <div class="flex flex-wrap gap-4">
             {% for link in links if link.price %}
-            <div class="flex items-center space-x-2">
+            {% set is_best = link.price == best_price %}
+            <div class="flex items-center space-x-2 {% if is_best %}bg-green-100 px-2 py-1 rounded{% endif %}">
                 <span class="text-xs font-medium text-gray-500">{{ link.source }}:</span>
-                <span class="text-sm font-semibold text-gray-900">{{ "%.2f"|format(link.price) }} {{ link.currency or '' }}</span>
+                <span class="text-sm font-semibold {% if is_best %}text-green-700{% else %}text-gray-900{% endif %}">{{ "%.2f"|format(link.price) }} {{ link.currency or '' }}</span>
+                {% if is_best %}<span class="text-xs text-green-600 font-medium">(Best)</span>{% endif %}
             </div>
             {% endfor %}
         </div>

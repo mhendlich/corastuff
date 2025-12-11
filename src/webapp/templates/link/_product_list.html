@@ -1,21 +1,30 @@
 {% for product in products %}
-<div class="px-4 py-3 hover:bg-gray-50 cursor-pointer" onclick="openLinkModal('{{ product.source }}', '{{ product.item_id or '' }}', '{{ product.name | e }}')">
-    <div class="flex justify-between items-start">
-        <div class="min-w-0 flex-1">
-            <p class="text-sm font-medium text-gray-900 truncate" title="{{ product.name }}">{{ product.name }}</p>
-            <p class="text-xs text-gray-500">ID: {{ product.item_id or 'N/A' }}</p>
+<div class="px-4 py-3 hover:bg-gray-50 product-link-item" data-source="{{ product.source }}" data-item-id="{{ product.item_id or '' }}" data-name="{{ product.name | e }}">
+    <div class="flex items-start gap-3">
+        <div class="flex-shrink-0 pt-1">
+            <input type="checkbox" class="product-checkbox h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                   data-source="{{ product.source }}" data-item-id="{{ product.item_id or '' }}" data-name="{{ product.name | e }}"
+                   onchange="updateBulkSelection()">
         </div>
-        <div class="ml-2 flex-shrink-0">
-            {% if product.price %}
-            <span class="text-sm font-medium text-green-600">{{ "%.2f"|format(product.price) }} {{ product.currency or '' }}</span>
-            {% else %}
-            <span class="text-sm text-gray-400">No price</span>
+        <div class="flex-1 min-w-0 cursor-pointer" onclick="openLinkModal('{{ product.source }}', '{{ product.item_id or '' }}', '{{ product.name | e }}')">
+            <div class="flex justify-between items-start">
+                <div class="min-w-0 flex-1">
+                    <p class="text-sm font-medium text-gray-900 truncate" title="{{ product.name }}">{{ product.name }}</p>
+                    <p class="text-xs text-gray-500">ID: {{ product.item_id or 'N/A' }}</p>
+                </div>
+                <div class="ml-2 flex-shrink-0">
+                    {% if product.price %}
+                    <span class="text-sm font-medium text-green-600">{{ "%.2f"|format(product.price) }} {{ product.currency or '' }}</span>
+                    {% else %}
+                    <span class="text-sm text-gray-400">No price</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% if product.url %}
+            <a href="{{ product.url }}" target="_blank" onclick="event.stopPropagation()" class="text-xs text-indigo-600 hover:text-indigo-800 mt-1 inline-block">View source</a>
             {% endif %}
         </div>
     </div>
-    {% if product.url %}
-    <a href="{{ product.url }}" target="_blank" onclick="event.stopPropagation()" class="text-xs text-indigo-600 hover:text-indigo-800 mt-1 inline-block">View source</a>
-    {% endif %}
 </div>
 {% else %}
 <div class="px-4 py-8 text-center text-sm text-gray-500">

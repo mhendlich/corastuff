@@ -64,8 +64,18 @@
             <li>
                 <div class="px-4 py-4 sm:px-6">
                     <div class="flex items-center justify-between">
-                        <p class="text-sm font-medium text-indigo-600 truncate">{{ source }}</p>
-                        <div class="ml-2 flex-shrink-0 flex">
+                        <div>
+                            <p class="text-sm font-medium text-indigo-600 truncate">{{ source }}</p>
+                            {% if last_scrape_times and last_scrape_times.get(source) %}
+                            <p class="text-xs text-gray-500 mt-1">
+                                Last scraped: {{ last_scrape_times[source][:16].replace('T', ' ') }}
+                            </p>
+                            {% endif %}
+                        </div>
+                        <div class="ml-2 flex-shrink-0 flex items-center gap-2">
+                            {% if last_scrape_times and last_scrape_times.get(source) %}
+                            <span class="text-xs text-gray-400" id="ago-{{ source }}"></span>
+                            {% endif %}
                             <p class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
                                 Active
                             </p>
@@ -83,4 +93,61 @@
         </ul>
     </div>
 </div>
+
+<!-- Danger Zone -->
+<div class="mt-8" id="reset-section">
+    <h2 class="text-lg font-medium text-red-600 mb-4">Danger Zone</h2>
+    <div class="bg-white border border-red-200 rounded-lg p-6">
+        <div class="flex items-start justify-between">
+            <div>
+                <h3 class="text-sm font-medium text-gray-900">Reset All Data</h3>
+                <p class="mt-1 text-sm text-gray-500">
+                    Permanently delete all products, canonical products, links, and scraper schedules.
+                    This action cannot be undone.
+                </p>
+            </div>
+            <button
+                type="button"
+                onclick="confirmReset()"
+                class="ml-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                Reset All
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function confirmReset() {
+    if (confirm('Are you sure you want to delete ALL data? This cannot be undone!')) {
+        if (confirm('This will permanently delete all products, canonical products, links, and schedules. Are you absolutely sure?')) {
+            htmx.ajax('POST', '/admin/reset-all', {
+                target: '#reset-section',
+                swap: 'innerHTML'
+            });
+        }
+    }
+}
+
+// Show relative time for last scraped timestamps
+function timeAgo(date) {
+    const seconds = Math.floor((new Date() - date) / 1000);
+
+    if (seconds < 60) return 'just now';
+    if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+    if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+    if (seconds < 604800) return Math.floor(seconds / 86400) + 'd ago';
+    return Math.floor(seconds / 604800) + 'w ago';
+}
+
+// Update relative times
+const lastScrapeTimes = {{ last_scrape_times | tojson if last_scrape_times else '{}' }};
+for (const [source, timestamp] of Object.entries(lastScrapeTimes)) {
+    const el = document.getElementById('ago-' + source);
+    if (el && timestamp) {
+        el.textContent = timeAgo(new Date(timestamp));
+    }
+}
+</script>
 {% endblock %}

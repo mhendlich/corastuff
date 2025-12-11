@@ -13,12 +13,29 @@
     </a>
 </div>
 
-<div class="mt-6">
+<!-- Search -->
+<div class="mt-6 mb-4">
+    <div class="relative">
+        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+            </svg>
+        </div>
+        <input type="text" id="search-input" placeholder="Search products..."
+               class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+               oninput="filterProducts()">
+    </div>
+    <div id="filter-results" class="mt-2 text-sm text-gray-500 hidden">
+        Showing <span id="visible-count">0</span> of {{ products|length }} products
+    </div>
+</div>
+
+<div class="mt-2">
     {% if products %}
     <div class="bg-white shadow overflow-hidden sm:rounded-md">
         <ul role="list" class="divide-y divide-gray-200">
             {% for product in products %}
-            <li>
+            <li class="product-item" data-name="{{ product.name | lower }}" data-description="{{ (product.description or '') | lower }}">
                 <a href="/products/{{ product.id }}" class="block hover:bg-gray-50">
                     <div class="px-4 py-4 sm:px-6">
                         <div class="flex items-center justify-between">
@@ -75,4 +92,32 @@
     </div>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterProducts() {
+    const searchTerm = document.getElementById('search-input').value.toLowerCase();
+    let visibleCount = 0;
+
+    document.querySelectorAll('.product-item').forEach(item => {
+        const name = item.dataset.name;
+        const description = item.dataset.description;
+
+        const matches = !searchTerm || name.includes(searchTerm) || description.includes(searchTerm);
+        item.classList.toggle('hidden', !matches);
+        if (matches) visibleCount++;
+    });
+
+    const filterResults = document.getElementById('filter-results');
+    const visibleCountEl = document.getElementById('visible-count');
+
+    if (searchTerm) {
+        filterResults.classList.remove('hidden');
+        visibleCountEl.textContent = visibleCount;
+    } else {
+        filterResults.classList.add('hidden');
+    }
+}
+</script>
 {% endblock %}

@@ -79,6 +79,20 @@ class ProductDatabase:
                 ON product_links (source, source_item_id)
             """)
 
+            # Scraper schedules - configuration for automatic scraper runs
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS scraper_schedules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scraper_name TEXT NOT NULL UNIQUE,
+                    enabled BOOLEAN DEFAULT 0,
+                    interval_minutes INTEGER DEFAULT 60,
+                    last_run TEXT,
+                    next_run TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
+
             conn.commit()
 
     def save_results(self, result: ScrapeResult):
@@ -408,3 +422,191 @@ class ProductDatabase:
                 "unlinked_products": unlinked_count,
                 "sources": source_count,
             }
+
+    def reset_all(self) -> dict:
+        """Clear all database tables and return counts of deleted records."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+
+            # Get counts before deletion
+            counts = {
+                "products": conn.execute("SELECT COUNT(*) FROM products").fetchone()[0],
+                "canonical_products": conn.execute("SELECT COUNT(*) FROM canonical_products").fetchone()[0],
+                "product_links": conn.execute("SELECT COUNT(*) FROM product_links").fetchone()[0],
+            }
+
+            # Delete all data (product_links will cascade from canonical_products)
+            conn.execute("DELETE FROM product_links")
+            conn.execute("DELETE FROM canonical_products")
+            conn.execute("DELETE FROM products")
+
+            # Also clear scraper schedules if table exists
+            try:
+                schedule_count = conn.execute("SELECT COUNT(*) FROM scraper_schedules").fetchone()[0]
+                conn.execute("DELETE FROM scraper_schedules")
+                counts["scraper_schedules"] = schedule_count
+            except sqlite3.OperationalError:
+                pass  # Table doesn't exist yet
+
+            conn.commit()
+
+        print(f"[db] Reset database: {counts}")
+        return counts
+
+    # --- Scraper Schedules ---
+
+    def get_schedule(self, scraper_name: str) -> dict | None:
+        """Get schedule configuration for a scraper."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                "SELECT * FROM scraper_schedules WHERE scraper_name = ?",
+                (scraper_name,),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_all_schedules(self) -> list[dict]:
+        """Get all scraper schedules."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                "SELECT * FROM scraper_schedules ORDER BY scraper_name"
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def upsert_schedule(
+        self,
+        scraper_name: str,
+        enabled: bool,
+        interval_minutes: int,
+    ) -> int:
+        """Create or update a scraper schedule. Returns the schedule ID."""
+        now = datetime.utcnow().isoformat()
+
+        with sqlite3.connect(self.db_path) as conn:
+            # Check if exists
+            existing = conn.execute(
+                "SELECT id FROM scraper_schedules WHERE scraper_name = ?",
+                (scraper_name,),
+            ).fetchone()
+
+            if existing:
+                # Update
+                conn.execute(
+                    """
+                    UPDATE scraper_schedules
+                    SET enabled = ?, interval_minutes = ?, updated_at = ?
+                    WHERE scraper_name = ?
+                    """,
+                    (enabled, interval_minutes, now, scraper_name),
+                )
+                conn.commit()
+                return existing[0]
+            else:
+                # Insert
+                cursor = conn.execute(
+                    """
+                    INSERT INTO scraper_schedules
+                    (scraper_name, enabled, interval_minutes, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (scraper_name, enabled, interval_minutes, now, now),
+                )
+                conn.commit()
+                return cursor.lastrowid
+
+    def update_schedule_last_run(self, scraper_name: str, last_run: str, next_run: str):
+        """Update the last_run and next_run timestamps for a schedule."""
+        now = datetime.utcnow().isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE scraper_schedules
+                SET last_run = ?, next_run = ?, updated_at = ?
+                WHERE scraper_name = ?
+                """,
+                (last_run, next_run, now, scraper_name),
+            )
+            conn.commit()
+
+    def get_enabled_schedules(self) -> list[dict]:
+        """Get all enabled scraper schedules."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                "SELECT * FROM scraper_schedules WHERE enabled = 1 ORDER BY scraper_name"
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_due_schedules(self) -> list[dict]:
+        """Get schedules that are due to run (next_run <= now or next_run is NULL)."""
+        now = datetime.utcnow().isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                SELECT * FROM scraper_schedules
+                WHERE enabled = 1 AND (next_run IS NULL OR next_run <= ?)
+                ORDER BY scraper_name
+                """,
+                (now,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_latest_products_with_price_change(self) -> list[dict]:
+        """Get latest products with price change info from previous scrape."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                WITH latest_scrapes AS (
+                    SELECT source, MAX(scraped_at) as latest_at
+                    FROM products
+                    GROUP BY source
+                ),
+                previous_scrapes AS (
+                    SELECT p.source, MAX(p.scraped_at) as prev_at
+                    FROM products p
+                    JOIN latest_scrapes ls ON p.source = ls.source
+                    WHERE p.scraped_at < ls.latest_at
+                    GROUP BY p.source
+                ),
+                current_products AS (
+                    SELECT p.*, pl.canonical_id
+                    FROM products p
+                    JOIN latest_scrapes ls ON p.source = ls.source AND p.scraped_at = ls.latest_at
+                    LEFT JOIN product_links pl ON p.source = pl.source AND p.item_id = pl.source_item_id
+                ),
+                previous_products AS (
+                    SELECT p.source, p.item_id, p.price as prev_price
+                    FROM products p
+                    JOIN previous_scrapes ps ON p.source = ps.source AND p.scraped_at = ps.prev_at
+                )
+                SELECT cp.*, pp.prev_price,
+                       CASE WHEN pp.prev_price IS NOT NULL AND cp.price IS NOT NULL
+                            THEN cp.price - pp.prev_price
+                            ELSE NULL END as price_change,
+                       CASE WHEN pp.prev_price IS NOT NULL AND pp.prev_price > 0 AND cp.price IS NOT NULL
+                            THEN ((cp.price - pp.prev_price) / pp.prev_price) * 100
+                            ELSE NULL END as price_change_pct
+                FROM current_products cp
+                LEFT JOIN previous_products pp ON cp.source = pp.source AND cp.item_id = pp.item_id
+                ORDER BY cp.source, cp.name
+                """
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_last_scrape_times(self) -> dict:
+        """Get the last scrape timestamp for each source."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                SELECT source, MAX(scraped_at) as last_scraped
+                FROM products
+                GROUP BY source
+                ORDER BY source
+                """
+            )
+            return {row["source"]: row["last_scraped"] for row in cursor.fetchall()}

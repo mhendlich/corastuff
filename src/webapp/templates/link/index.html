@@ -4,8 +4,18 @@
 
 {% block content %}
 <div class="px-4 sm:px-0">
-    <h1 class="text-2xl font-semibold text-gray-900">Link Products</h1>
-    <p class="mt-1 text-sm text-gray-600">Connect products from different sources to canonical products</p>
+    <div class="flex justify-between items-center">
+        <div>
+            <h1 class="text-2xl font-semibold text-gray-900">Link Products</h1>
+            <p class="mt-1 text-sm text-gray-600">Connect products from different sources to canonical products</p>
+        </div>
+        <div id="bulk-actions" class="hidden">
+            <span id="selected-count" class="text-sm text-gray-600 mr-3">0 selected</span>
+            <button type="button" onclick="openBulkLinkModal()" class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
+                Bulk Link
+            </button>
+        </div>
+    </div>
 </div>
 
 <div class="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -87,11 +97,69 @@
         </form>
     </div>
 </div>
+
+<!-- Bulk Link Modal -->
+<div id="bulk-link-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4">
+        <div class="px-4 py-3 border-b border-gray-200">
+            <h3 class="text-lg font-medium text-gray-900">Bulk Link Products</h3>
+        </div>
+        <form id="bulk-link-form">
+            <div class="px-4 py-4">
+                <p class="text-sm text-gray-600 mb-4">
+                    Linking <strong id="bulk-count">0</strong> products to:
+                </p>
+
+                <div id="bulk-products-list" class="max-h-32 overflow-y-auto mb-4 text-xs text-gray-500 bg-gray-50 rounded p-2">
+                    <!-- Selected products will be listed here -->
+                </div>
+
+                <!-- Tab buttons -->
+                <div class="flex border-b border-gray-200 mb-4">
+                    <button type="button" id="bulk-tab-existing" onclick="showBulkTab('existing')" class="px-4 py-2 text-sm font-medium text-indigo-600 border-b-2 border-indigo-600">
+                        Existing Product
+                    </button>
+                    <button type="button" id="bulk-tab-new" onclick="showBulkTab('new')" class="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">
+                        Create New
+                    </button>
+                </div>
+
+                <!-- Existing product tab -->
+                <div id="bulk-panel-existing">
+                    <label for="bulk_canonical_id" class="block text-sm font-medium text-gray-700">Select Canonical Product</label>
+                    <select name="canonical_id" id="bulk_canonical_id" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                        <option value="">-- Select a product --</option>
+                        {% for cp in canonical_products %}
+                        <option value="{{ cp.id }}">{{ cp.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- New product tab -->
+                <div id="bulk-panel-new" class="hidden">
+                    <label for="bulk_new_name" class="block text-sm font-medium text-gray-700">New Product Name</label>
+                    <input type="text" name="name" id="bulk_new_name" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="e.g., BLACKROLL Standard">
+                </div>
+            </div>
+
+            <div class="px-4 py-3 bg-gray-50 flex justify-end space-x-3 rounded-b-lg">
+                <button type="button" onclick="closeBulkModal()" class="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    Cancel
+                </button>
+                <button type="submit" class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
+                    Link All Selected
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
 let currentTab = 'existing';
+let bulkTab = 'existing';
+let selectedProducts = [];
 
 function showTab(tab) {
     currentTab = tab;
@@ -111,6 +179,20 @@ function showTab(tab) {
     form.action = tab === 'existing' ? '/link/create' : '/link/create-new';
 }
 
+function showBulkTab(tab) {
+    bulkTab = tab;
+    document.getElementById('bulk-panel-existing').classList.toggle('hidden', tab !== 'existing');
+    document.getElementById('bulk-panel-new').classList.toggle('hidden', tab !== 'new');
+    document.getElementById('bulk-tab-existing').classList.toggle('text-indigo-600', tab === 'existing');
+    document.getElementById('bulk-tab-existing').classList.toggle('border-indigo-600', tab === 'existing');
+    document.getElementById('bulk-tab-existing').classList.toggle('border-b-2', tab === 'existing');
+    document.getElementById('bulk-tab-existing').classList.toggle('text-gray-500', tab !== 'existing');
+    document.getElementById('bulk-tab-new').classList.toggle('text-indigo-600', tab === 'new');
+    document.getElementById('bulk-tab-new').classList.toggle('border-indigo-600', tab === 'new');
+    document.getElementById('bulk-tab-new').classList.toggle('border-b-2', tab === 'new');
+    document.getElementById('bulk-tab-new').classList.toggle('text-gray-500', tab !== 'new');
+}
+
 function openLinkModal(source, itemId, productName) {
     document.getElementById('link-source').value = source;
     document.getElementById('link-item-id').value = itemId;
@@ -123,14 +205,60 @@ function closeModal() {
     document.getElementById('link-modal').classList.add('hidden');
 }
 
+// Bulk selection functions
+function updateBulkSelection() {
+    const checkboxes = document.querySelectorAll('.product-checkbox:checked');
+    selectedProducts = Array.from(checkboxes).map(cb => ({
+        source: cb.dataset.source,
+        itemId: cb.dataset.itemId,
+        name: cb.dataset.name
+    }));
+
+    const bulkActions = document.getElementById('bulk-actions');
+    const selectedCount = document.getElementById('selected-count');
+
+    if (selectedProducts.length > 0) {
+        bulkActions.classList.remove('hidden');
+        selectedCount.textContent = selectedProducts.length + ' selected';
+    } else {
+        bulkActions.classList.add('hidden');
+    }
+}
+
+function openBulkLinkModal() {
+    if (selectedProducts.length === 0) return;
+
+    document.getElementById('bulk-count').textContent = selectedProducts.length;
+
+    // Show list of selected products
+    const listEl = document.getElementById('bulk-products-list');
+    listEl.innerHTML = selectedProducts.map(p =>
+        `<div class="truncate">${p.source}: ${p.name}</div>`
+    ).join('');
+
+    document.getElementById('bulk-link-modal').classList.remove('hidden');
+    showBulkTab('existing');
+}
+
+function closeBulkModal() {
+    document.getElementById('bulk-link-modal').classList.add('hidden');
+}
+
 // Close modal on escape key
 document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') closeModal();
+    if (e.key === 'Escape') {
+        closeModal();
+        closeBulkModal();
+    }
 });
 
 // Close modal when clicking outside
 document.getElementById('link-modal').addEventListener('click', function(e) {
     if (e.target === this) closeModal();
+});
+
+document.getElementById('bulk-link-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeBulkModal();
 });
 
 // Handle form submission with HTMX
@@ -167,6 +295,7 @@ document.getElementById('link-form').addEventListener('submit', function(e) {
     .then(html => {
         document.getElementById('source-' + source).innerHTML = html;
         closeModal();
+        updateBulkSelection();
         // Update the unlinked count in the header
         const headerEl = document.querySelector('#source-' + source).previousElementSibling;
         if (headerEl) {
@@ -181,6 +310,87 @@ document.getElementById('link-form').addEventListener('submit', function(e) {
         console.error('Error:', error);
         alert('Failed to link product. Please try again.');
     });
+});
+
+// Handle bulk form submission
+document.getElementById('bulk-link-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    let canonicalId;
+    if (bulkTab === 'existing') {
+        canonicalId = document.getElementById('bulk_canonical_id').value;
+        if (!canonicalId) {
+            alert('Please select a canonical product');
+            return;
+        }
+    } else {
+        const newName = document.getElementById('bulk_new_name').value;
+        if (!newName || !newName.trim()) {
+            alert('Please enter a product name');
+            return;
+        }
+        // First create the new canonical product
+        const firstProduct = selectedProducts[0];
+        const createFormData = new FormData();
+        createFormData.append('name', newName);
+        createFormData.append('source', firstProduct.source);
+        createFormData.append('source_item_id', firstProduct.itemId);
+
+        try {
+            const createResp = await fetch('/link/create-new', {
+                method: 'POST',
+                body: createFormData
+            });
+            if (!createResp.ok) throw new Error('Failed to create canonical product');
+
+            // Get the canonical ID from the response or refresh page
+            // For simplicity, reload the page after bulk creation
+            window.location.reload();
+            return;
+        } catch (error) {
+            alert('Failed to create canonical product: ' + error.message);
+            return;
+        }
+    }
+
+    // Link all selected products
+    const sourcesToRefresh = new Set();
+
+    for (const product of selectedProducts) {
+        const formData = new FormData();
+        formData.append('canonical_id', canonicalId);
+        formData.append('source', product.source);
+        formData.append('source_item_id', product.itemId);
+        sourcesToRefresh.add(product.source);
+
+        try {
+            await fetch('/link/create', {
+                method: 'POST',
+                body: formData
+            });
+        } catch (error) {
+            console.error('Error linking product:', error);
+        }
+    }
+
+    closeBulkModal();
+
+    // Refresh each source column
+    for (const source of sourcesToRefresh) {
+        try {
+            const response = await fetch('/link/source/' + source);
+            if (response.ok) {
+                const html = await response.text();
+                document.getElementById('source-' + source).innerHTML = html;
+            }
+        } catch (error) {
+            console.error('Error refreshing source:', error);
+        }
+    }
+
+    // Clear selection
+    selectedProducts = [];
+    updateBulkSelection();
 });
 </script>
 {% endblock %}
