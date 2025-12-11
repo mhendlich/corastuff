@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-import sqlite3
 import hashlib
+import re
+import sqlite3
 from io import BytesIO
+from difflib import SequenceMatcher
 from datetime import datetime
 from pathlib import Path
 
@@ -256,7 +258,7 @@ class ProductDatabase:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 """
-                SELECT p.*, pi.image_data, pi.image_mime, pi.updated_at as image_updated_at
+                SELECT p.*, pi.image_data, pi.image_mime, pi.image_hash, pi.updated_at as image_updated_at
                 FROM products p
                 LEFT JOIN product_images pi
                     ON pi.source = p.source
@@ -372,7 +374,7 @@ class ProductDatabase:
             cursor = conn.execute(
                 """
                 SELECT pl.*, p.name, p.price, p.currency, p.url,
-                       pi.image_data, pi.image_mime, pi.updated_at as image_updated_at
+                       pi.image_data, pi.image_mime, pi.image_hash, pi.updated_at as image_updated_at
                 FROM product_links pl
                 LEFT JOIN (
                     SELECT source, item_id, name, price, currency, url, product_key,
@@ -419,7 +421,7 @@ class ProductDatabase:
             cursor = conn.execute(
                 """
                 SELECT p.*, pl.canonical_id,
-                       pi.image_data, pi.image_mime, pi.updated_at as image_updated_at
+                       pi.image_data, pi.image_mime, pi.image_hash, pi.updated_at as image_updated_at
                 FROM products p
                 LEFT JOIN product_links pl ON p.source = pl.source AND p.item_id = pl.source_item_id
                 LEFT JOIN product_images pi
@@ -439,7 +441,7 @@ class ProductDatabase:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 """
-                SELECT p.*, pi.image_data, pi.image_mime, pi.updated_at as image_updated_at
+                SELECT p.*, pi.image_data, pi.image_mime, pi.image_hash, pi.updated_at as image_updated_at
                 FROM products p
                 LEFT JOIN product_links pl ON p.source = pl.source AND p.item_id = pl.source_item_id
                 LEFT JOIN product_images pi
@@ -461,7 +463,7 @@ class ProductDatabase:
             cursor = conn.execute(
                 """
                 SELECT p.*, pl.canonical_id, cp.name as canonical_name,
-                       pi.image_data, pi.image_mime, pi.updated_at as image_updated_at
+                       pi.image_data, pi.image_mime, pi.image_hash, pi.updated_at as image_updated_at
                 FROM products p
                 JOIN product_links pl ON p.source = pl.source AND p.item_id = pl.source_item_id
                 JOIN canonical_products cp ON pl.canonical_id = cp.id
@@ -475,6 +477,263 @@ class ProductDatabase:
                 """
             )
             return [dict(row) for row in cursor.fetchall()]
+
+    def get_link_suggestions(self, limit: int = 15, exclude_keys: list[str] | None = None) -> list[dict]:
+        """Return high-confidence canonical matches for unlinked products."""
+        exclude_set = {key for key in (exclude_keys or []) if key}
+        unlinked = self.get_unlinked_products()
+        canonical_products = self.get_all_canonical_products()
+        canonical_assets = self._build_canonical_asset_index(canonical_products)
+
+        suggestions: list[dict] = []
+        for product in unlinked:
+            product_key = f"{product['source']}::{product.get('item_id') or ''}"
+            if product_key in exclude_set:
+                continue
+
+            product_features = self._extract_product_features(product)
+            best_match = None
+
+            for canonical in canonical_products:
+                assets = canonical_assets.get(
+                    canonical["id"],
+                    {"linked_names": set(), "item_ids": set(), "images": []},
+                )
+                score, reasons, details = self._score_match(
+                    product, product_features, canonical, assets
+                )
+                if score <= 0.35:
+                    continue
+
+                if not best_match or score > best_match["score"]:
+                    canonical_image = None
+                    canonical_image_mime = None
+                    if details.get("image_bytes"):
+                        canonical_image = details["image_bytes"]
+                        canonical_image_mime = details.get("image_mime")
+                    elif assets.get("images"):
+                        canonical_image = assets["images"][0].get("data")
+                        canonical_image_mime = assets["images"][0].get("mime")
+
+                    best_match = {
+                        "source": product["source"],
+                        "source_item_id": product.get("item_id"),
+                        "product_name": product.get("name"),
+                        "product_price": product.get("price"),
+                        "product_currency": product.get("currency"),
+                        "product_url": product.get("url"),
+                        "product_image": product.get("image_data"),
+                        "product_image_mime": product.get("image_mime"),
+                        "canonical_id": canonical["id"],
+                        "canonical_name": canonical["name"],
+                        "score": round(score, 4),
+                        "reasons": reasons,
+                        "matched_name": details.get("matched_name"),
+                        "canonical_image": canonical_image,
+                        "canonical_image_mime": canonical_image_mime,
+                        "linked_names": sorted(list(assets.get("linked_names", [])))[:3],
+                    }
+
+            if best_match:
+                suggestions.append(best_match)
+
+        suggestions.sort(key=lambda s: s["score"], reverse=True)
+        return suggestions[:limit]
+
+    def _build_canonical_asset_index(self, canonical_products: list[dict]) -> dict[int, dict]:
+        """Collect linked names, SKUs, and images for each canonical product."""
+        assets = {
+            cp["id"]: {"name": cp["name"], "linked_names": set(), "item_ids": set(), "images": []}
+            for cp in canonical_products
+        }
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                SELECT cp.id as canonical_id, cp.name as canonical_name,
+                       p.name as linked_name, p.item_id,
+                       pi.image_data, pi.image_mime, pi.image_hash
+                FROM canonical_products cp
+                JOIN product_links pl ON cp.id = pl.canonical_id
+                LEFT JOIN (
+                    SELECT source, item_id, name, url, product_key,
+                           ROW_NUMBER() OVER (PARTITION BY source, item_id ORDER BY scraped_at DESC) as rn
+                    FROM products
+                ) p ON pl.source = p.source
+                    AND (
+                        pl.source_item_id = p.item_id
+                        OR (pl.source_item_id IN ('', 'None') AND p.item_id IS NULL)
+                    )
+                    AND p.rn = 1
+                LEFT JOIN product_images pi
+                    ON pi.source = pl.source
+                    AND pi.product_key = COALESCE(p.product_key, pl.source_item_id, p.url, p.name)
+                """
+            )
+
+            for row in cursor.fetchall():
+                entry = assets.setdefault(
+                    row["canonical_id"],
+                    {"name": row["canonical_name"], "linked_names": set(), "item_ids": set(), "images": []},
+                )
+                if row["linked_name"]:
+                    entry["linked_names"].add(row["linked_name"])
+                if row["item_id"]:
+                    entry["item_ids"].add(str(row["item_id"]))
+                if row["image_data"]:
+                    entry["images"].append(
+                        {
+                            "hash": row["image_hash"],
+                            "avg_hash": self._average_hash_for_similarity(row["image_data"]),
+                            "data": row["image_data"],
+                            "mime": row["image_mime"],
+                        }
+                    )
+
+        return assets
+
+    def _extract_product_features(self, product: dict) -> dict:
+        """Prepare normalized features used for suggestion scoring."""
+        image_data = product.get("image_data")
+        avg_hash = self._average_hash_for_similarity(image_data) if image_data else None
+        image_hash = product.get("image_hash")
+
+        if not image_hash and image_data:
+            image_hash = hashlib.sha256(image_data).hexdigest()
+
+        return {
+            "sku": self._normalize_token(product.get("item_id")),
+            "avg_hash": avg_hash,
+            "image_hash": image_hash,
+        }
+
+    def _score_match(
+        self,
+        product: dict,
+        product_features: dict,
+        canonical: dict,
+        assets: dict,
+    ) -> tuple[float, list[str], dict]:
+        """Compute a similarity score for a single product/canonical pairing."""
+        reasons: list[str] = []
+        name = product.get("name") or ""
+        best_name_score = self._text_similarity(name, canonical.get("name") or "")
+        matched_name = canonical.get("name")
+
+        for linked_name in assets.get("linked_names", []):
+            candidate_score = self._text_similarity(name, linked_name)
+            if candidate_score > best_name_score:
+                best_name_score = candidate_score
+                matched_name = linked_name
+
+        score = 0.0
+        if best_name_score > 0:
+            score += best_name_score * 0.55
+            if best_name_score >= 0.25:
+                reasons.append(f"Name similarity {int(best_name_score * 100)}% vs '{matched_name}'")
+
+        # SKU / item_id match
+        sku_reason = None
+        product_sku = product_features.get("sku")
+        if product_sku and assets.get("item_ids"):
+            for sku in assets["item_ids"]:
+                normalized = self._normalize_token(sku)
+                if not normalized:
+                    continue
+                if normalized == product_sku:
+                    score += 0.3
+                    sku_reason = f"Exact SKU match ({sku})"
+                    break
+                sku_similarity = self._text_similarity(product.get("item_id"), sku)
+                if sku_similarity > 0.7:
+                    score += 0.15
+                    sku_reason = f"Similar SKU {sku} ({int(sku_similarity * 100)}%)"
+                    break
+
+        if sku_reason:
+            reasons.append(sku_reason)
+
+        # Image match
+        image_boost = 0.0
+        image_reason = None
+        best_image_bytes = None
+        best_image_mime = None
+        if product_features.get("image_hash") and assets.get("images"):
+            for image in assets["images"]:
+                if image.get("hash") and image["hash"] == product_features["image_hash"]:
+                    image_boost = 0.45
+                    image_reason = "Exact image match"
+                    best_image_bytes = image.get("data")
+                    best_image_mime = image.get("mime")
+                    break
+
+                if image.get("avg_hash") and product_features.get("avg_hash"):
+                    distance = self._hamming_distance(image["avg_hash"], product_features["avg_hash"])
+                    if distance is None:
+                        continue
+                    similarity = 1 - (distance / len(image["avg_hash"]))
+                    if similarity >= 0.75:
+                        boost = 0.25 + (similarity - 0.75) * 0.3
+                        if boost > image_boost:
+                            image_boost = boost
+                            image_reason = f"Similar image ({int(similarity * 100)}%)"
+                            best_image_bytes = image.get("data")
+                            best_image_mime = image.get("mime")
+
+        if image_reason:
+            score += image_boost
+            reasons.append(image_reason)
+
+        total_score = min(score, 0.99)
+        return total_score, reasons, {
+            "matched_name": matched_name,
+            "image_bytes": best_image_bytes,
+            "image_mime": best_image_mime,
+        }
+
+    @staticmethod
+    def _tokenize(text: str) -> set[str]:
+        if not text:
+            return set()
+        return set(re.findall(r"[a-z0-9]+", text.lower()))
+
+    @staticmethod
+    def _normalize_token(value: str | None) -> str:
+        if not value:
+            return ""
+        return re.sub(r"[^a-z0-9]+", "", str(value).lower())
+
+    def _text_similarity(self, a: str | None, b: str | None) -> float:
+        if not a or not b:
+            return 0.0
+
+        tokens_a = self._tokenize(a)
+        tokens_b = self._tokenize(b)
+        overlap = (len(tokens_a & tokens_b) / len(tokens_a | tokens_b)) if tokens_a and tokens_b else 0.0
+        ratio = SequenceMatcher(None, a.lower(), b.lower()).ratio()
+        return (ratio * 0.6) + (overlap * 0.4)
+
+    def _average_hash_for_similarity(self, image_bytes: bytes | None, hash_size: int = 8) -> str | None:
+        if not image_bytes:
+            return None
+
+        try:
+            with Image.open(BytesIO(image_bytes)) as img:
+                resample = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
+                img = img.convert("L").resize((hash_size, hash_size), resample)
+                pixels = list(img.getdata())
+        except Exception:
+            return None
+
+        avg = sum(pixels) / len(pixels)
+        return "".join("1" if pixel > avg else "0" for pixel in pixels)
+
+    @staticmethod
+    def _hamming_distance(a: str | None, b: str | None) -> int | None:
+        if not a or not b or len(a) != len(b):
+            return None
+        return sum(ch1 != ch2 for ch1, ch2 in zip(a, b))
 
     def get_sources(self) -> list[str]:
         """Get list of all sources that have products."""
@@ -793,7 +1052,7 @@ class ProductDatabase:
                        CASE WHEN pp.prev_price IS NOT NULL AND pp.prev_price > 0 AND cp.price IS NOT NULL
                             THEN ((cp.price - pp.prev_price) / pp.prev_price) * 100
                             ELSE NULL END as price_change_pct,
-                       pi.image_data, pi.image_mime, pi.updated_at as image_updated_at
+                       pi.image_data, pi.image_mime, pi.image_hash, pi.updated_at as image_updated_at
                 FROM current_products cp
                 LEFT JOIN previous_products pp ON cp.source = pp.source AND cp.item_id = pp.item_id
                 LEFT JOIN product_images pi

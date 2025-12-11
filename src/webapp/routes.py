@@ -1,11 +1,12 @@
 """FastAPI routes for the webapp."""
 
 import asyncio
+import base64
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 
 from ..scrapers import get_scraper, list_scrapers
@@ -118,6 +119,20 @@ def _get_templates_mtime() -> float:
     for f in templates_dir.rglob("*.html"):
         max_mtime = max(max_mtime, f.stat().st_mtime)
     return max_mtime
+
+
+def _to_data_uri(data: bytes | None, mime: str | None = None) -> str | None:
+    """Convert raw image bytes to a data URI for inline display."""
+    if not data:
+        return None
+
+    try:
+        encoded = base64.b64encode(data).decode("ascii")
+    except Exception:
+        return None
+
+    mime_type = mime or "image/jpeg"
+    return f"data:{mime_type};base64,{encoded}"
 
 
 @router.get("/api/live-reload")
@@ -324,6 +339,44 @@ async def get_source_products(request: Request, source: str, _: str = Depends(re
             "source": source,
         },
     )
+
+@router.get("/link/suggestions")
+async def get_link_suggestions(
+    request: Request,
+    exclude: list[str] = Query(default=[]),
+    limit: int = Query(default=15, ge=1, le=50),
+    _: str = Depends(require_auth),
+):
+    """Return fuzzy/ML suggestions for linking products to canonicals."""
+    db = get_db(request)
+    suggestions = db.get_link_suggestions(limit=limit, exclude_keys=exclude)
+
+    payload = []
+    for suggestion in suggestions:
+        payload.append(
+            {
+                "source": suggestion.get("source"),
+                "source_item_id": suggestion.get("source_item_id"),
+                "product_name": suggestion.get("product_name"),
+                "product_price": suggestion.get("product_price"),
+                "product_currency": suggestion.get("product_currency"),
+                "product_url": suggestion.get("product_url"),
+                "canonical_id": suggestion.get("canonical_id"),
+                "canonical_name": suggestion.get("canonical_name"),
+                "score": suggestion.get("score"),
+                "reasons": suggestion.get("reasons") or [],
+                "matched_name": suggestion.get("matched_name"),
+                "linked_names": suggestion.get("linked_names") or [],
+                "product_image": _to_data_uri(
+                    suggestion.get("product_image"), suggestion.get("product_image_mime")
+                ),
+                "canonical_image": _to_data_uri(
+                    suggestion.get("canonical_image"), suggestion.get("canonical_image_mime")
+                ),
+            }
+        )
+
+    return {"suggestions": payload}
 
 
 @router.post("/link/create")

@@ -16,6 +16,76 @@
 {% endblock %}
 
 {% block content %}
+<div class="app-card p-5 mb-6 border border-white/10 bg-gradient-to-br from-white/10 via-white/[0.04] to-transparent">
+    <div class="flex items-start justify-between gap-4">
+        <div>
+            <p class="text-xs font-semibold uppercase tracking-wide text-brand-soft">Smart suggestions</p>
+            <h3 class="text-lg font-semibold text-white">Speed link with fuzzy matches</h3>
+            <p class="text-sm text-slate-400">Name/SKU token similarity plus image exact/near matching. Approve or reject with the keyboard.</p>
+        </div>
+        <div class="text-xs text-slate-400 flex items-center gap-2 shrink-0">
+            <span class="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white/5 border border-white/10">
+                <span class="font-mono text-slate-200">A</span> Approve
+            </span>
+            <span class="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white/5 border border-white/10">
+                <span class="font-mono text-slate-200">R</span> Reject
+            </span>
+        </div>
+    </div>
+
+    <div id="suggestion-loading" class="text-sm text-slate-400 mt-4">Scanning for high-confidence matches…</div>
+    <div id="suggestion-empty" class="text-sm text-slate-400 mt-4 hidden">No confident suggestions yet. Link manually or refresh after new scrapes.</div>
+
+    <div id="suggestion-card" class="hidden mt-4 border border-white/10 rounded-xl bg-white/[0.03] p-4">
+        <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+                <span id="suggestion-score" class="inline-flex items-center px-3 py-1 rounded-md bg-brand/20 text-brand-soft text-xs font-semibold">0%</span>
+                <span id="suggestion-source" class="text-xs text-slate-300"></span>
+                <span id="suggestion-queue-count" class="text-xs text-slate-500"></span>
+            </div>
+            <button type="button" onclick="loadSuggestions(true)" class="app-btn-secondary text-xs px-3 py-1 rounded-md border border-white/10">
+                Rescan
+            </button>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4 mt-4">
+            <div class="flex gap-3">
+                <div class="h-16 w-16 rounded-lg overflow-hidden bg-white/5 border border-white/10 flex items-center justify-center">
+                    <img id="suggest-product-image" alt="Source product" class="h-full w-full object-cover hidden">
+                    <div id="suggest-product-fallback" class="text-[10px] text-slate-400 text-center px-2 leading-tight">No image</div>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-sm font-semibold text-white truncate" id="suggest-product-name"></p>
+                    <p class="text-xs text-slate-400" id="suggest-product-sku"></p>
+                    <p class="text-xs text-slate-500" id="suggest-product-price"></p>
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <div class="h-16 w-16 rounded-lg overflow-hidden bg-white/5 border border-white/10 flex items-center justify-center">
+                    <img id="suggest-canonical-image" alt="Canonical example" class="h-full w-full object-cover hidden">
+                    <div id="suggest-canonical-fallback" class="text-[10px] text-slate-400 text-center px-2 leading-tight">No image</div>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-sm font-semibold text-white truncate" id="suggest-canonical-name"></p>
+                    <p class="text-xs text-slate-400" id="suggest-linked-names"></p>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-3 text-xs text-slate-300 flex flex-wrap gap-2" id="suggestion-reasons"></div>
+
+        <div class="mt-4 flex flex-wrap items-center gap-2">
+            <button type="button" onclick="approveSuggestion()" id="suggestion-approve" class="app-btn inline-flex items-center px-3 py-2 rounded-md text-sm font-semibold">
+                Approve (A)
+            </button>
+            <button type="button" onclick="rejectSuggestion()" id="suggestion-reject" class="app-btn-secondary inline-flex items-center px-3 py-2 rounded-md text-sm font-semibold">
+                Reject (R)
+            </button>
+            <span class="text-xs text-slate-500">Keyboard first: press A or R to fly through matches.</span>
+        </div>
+    </div>
+</div>
+
 <div class="grid grid-cols-3 gap-6">
     <!-- Source columns -->
     {% for source in sources %}
@@ -164,6 +234,28 @@
 let currentTab = 'existing';
 let bulkTab = 'existing';
 let selectedProducts = [];
+let suggestionQueue = [];
+let dismissedSuggestions = new Set();
+let suggestionLoading = false;
+
+function setSourceListHTML(source, html) {
+    const container = document.getElementById('source-' + source);
+    if (!container) return;
+
+    container.innerHTML = html;
+
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+    const count = temp.querySelectorAll('.product-link-item').length;
+    const headerEl = container.previousElementSibling;
+    if (headerEl) {
+        const countEl = headerEl.querySelector('.text-xs');
+        if (countEl) {
+            countEl.textContent = count + ' unlinked';
+        }
+    }
+    updateBulkSelection();
+}
 
 function showTab(tab) {
     currentTab = tab;
@@ -252,11 +344,195 @@ function closeBulkModal() {
     document.getElementById('bulk-link-modal').classList.add('hidden');
 }
 
-// Close modal on escape key
+// Suggestion helpers
+function currentSuggestion() {
+    return suggestionQueue.length > 0 ? suggestionQueue[0] : null;
+}
+
+function suggestionKey(suggestion) {
+    return `${suggestion?.source || ''}::${suggestion?.source_item_id || ''}`;
+}
+
+function setSuggestionImage(imgId, fallbackId, src) {
+    const img = document.getElementById(imgId);
+    const fallback = document.getElementById(fallbackId);
+
+    if (!img || !fallback) return;
+
+    if (src) {
+        img.src = src;
+        img.classList.remove('hidden');
+        fallback.classList.add('hidden');
+    } else {
+        img.src = '';
+        img.classList.add('hidden');
+        fallback.classList.remove('hidden');
+    }
+}
+
+function renderSuggestionReasons(reasons) {
+    const container = document.getElementById('suggestion-reasons');
+    if (!container) return;
+    container.innerHTML = '';
+
+    (reasons || []).forEach(reason => {
+        const badge = document.createElement('span');
+        badge.className = 'inline-flex items-center px-2 py-1 rounded bg-white/10 text-white/80';
+        badge.textContent = reason;
+        container.appendChild(badge);
+    });
+}
+
+function renderSuggestionCard() {
+    const suggestion = currentSuggestion();
+    const card = document.getElementById('suggestion-card');
+    const empty = document.getElementById('suggestion-empty');
+    const loadingEl = document.getElementById('suggestion-loading');
+    const queueCount = document.getElementById('suggestion-queue-count');
+
+    if (!card || !empty || !loadingEl) return;
+
+    queueCount.textContent = suggestionQueue.length > 1 ? `Queue: ${suggestionQueue.length}` : '';
+
+    if (suggestion) {
+        card.classList.remove('hidden');
+        empty.classList.add('hidden');
+        loadingEl.classList.add('hidden');
+
+        const score = Math.round((suggestion.score || 0) * 100);
+        const price = suggestion.product_price !== null && suggestion.product_price !== undefined
+            ? `${Number(suggestion.product_price).toFixed(2)} ${suggestion.product_currency || ''}`.trim()
+            : 'No price';
+        const skuText = suggestion.source_item_id ? `SKU: ${suggestion.source_item_id}` : 'No SKU';
+        const linkedNames = (suggestion.linked_names || []).length > 0
+            ? `Linked examples: ${(suggestion.linked_names || []).join(', ')}`
+            : 'No linked examples yet';
+
+        document.getElementById('suggestion-score').textContent = `${score}% match`;
+        document.getElementById('suggestion-source').textContent = `${suggestion.source || ''} · ${skuText}`;
+        document.getElementById('suggest-product-name').textContent = suggestion.product_name || '';
+        document.getElementById('suggest-product-sku').textContent = skuText;
+        document.getElementById('suggest-product-price').textContent = price;
+        document.getElementById('suggest-canonical-name').textContent = suggestion.canonical_name || '';
+        document.getElementById('suggest-linked-names').textContent = linkedNames;
+
+        setSuggestionImage('suggest-product-image', 'suggest-product-fallback', suggestion.product_image);
+        setSuggestionImage('suggest-canonical-image', 'suggest-canonical-fallback', suggestion.canonical_image);
+        renderSuggestionReasons(suggestion.reasons);
+    } else {
+        card.classList.add('hidden');
+        if (suggestionLoading) {
+            loadingEl.classList.remove('hidden');
+            empty.classList.add('hidden');
+        } else {
+            loadingEl.classList.add('hidden');
+            empty.classList.remove('hidden');
+            queueCount.textContent = '';
+        }
+    }
+}
+
+function shiftSuggestion() {
+    if (suggestionQueue.length > 0) {
+        suggestionQueue.shift();
+    }
+    renderSuggestionCard();
+}
+
+async function loadSuggestions(forceRefresh = false) {
+    if (suggestionLoading) return;
+    if (!forceRefresh && suggestionQueue.length > 0) return;
+
+    suggestionLoading = true;
+    const loadingEl = document.getElementById('suggestion-loading');
+    const emptyEl = document.getElementById('suggestion-empty');
+    if (loadingEl) loadingEl.classList.remove('hidden');
+    if (emptyEl) emptyEl.classList.add('hidden');
+
+    const params = new URLSearchParams();
+    dismissedSuggestions.forEach(key => params.append('exclude', key));
+    const query = params.toString();
+    const url = query ? `/link/suggestions?${query}` : '/link/suggestions';
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Failed to load suggestions');
+
+        const data = await response.json();
+        suggestionQueue = data.suggestions || [];
+    } catch (error) {
+        console.error('Error loading suggestions:', error);
+    } finally {
+        suggestionLoading = false;
+        renderSuggestionCard();
+    }
+}
+
+async function approveSuggestion() {
+    const suggestion = currentSuggestion();
+    if (!suggestion) return;
+
+    const approveBtn = document.getElementById('suggestion-approve');
+    const rejectBtn = document.getElementById('suggestion-reject');
+    if (approveBtn) approveBtn.disabled = true;
+    if (rejectBtn) rejectBtn.disabled = true;
+
+    const formData = new FormData();
+    formData.append('canonical_id', suggestion.canonical_id);
+    formData.append('source', suggestion.source);
+    formData.append('source_item_id', suggestion.source_item_id || '');
+
+    try {
+        const response = await fetch('/link/create', {
+            method: 'POST',
+            body: formData
+        });
+        if (!response.ok) {
+            throw new Error('Failed to link product');
+        }
+        const html = await response.text();
+        setSourceListHTML(suggestion.source, html);
+        shiftSuggestion();
+        loadSuggestions(true);
+    } catch (error) {
+        console.error('Error approving suggestion:', error);
+        alert('Failed to approve suggestion. Please try again.');
+    } finally {
+        if (approveBtn) approveBtn.disabled = false;
+        if (rejectBtn) rejectBtn.disabled = false;
+    }
+}
+
+function rejectSuggestion() {
+    const suggestion = currentSuggestion();
+    if (!suggestion) return;
+
+    dismissedSuggestions.add(suggestionKey(suggestion));
+    shiftSuggestion();
+
+    if (suggestionQueue.length === 0) {
+        loadSuggestions(true);
+    }
+}
+
+// Close modal on escape key and wire keyboard shortcuts
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
         closeModal();
         closeBulkModal();
+    }
+
+    const targetTag = e.target?.tagName;
+    const inInput = targetTag === 'INPUT' || targetTag === 'TEXTAREA' || targetTag === 'SELECT';
+    if (inInput) return;
+
+    if (e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        approveSuggestion();
+    }
+    if (e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        rejectSuggestion();
     }
 });
 
@@ -269,7 +545,7 @@ document.getElementById('bulk-link-modal').addEventListener('click', function(e)
     if (e.target === this) closeBulkModal();
 });
 
-// Handle form submission with HTMX
+// Handle form submission with HTMX-style fetch
 document.getElementById('link-form').addEventListener('submit', function(e) {
     e.preventDefault();
     const formData = new FormData(this);
@@ -301,18 +577,9 @@ document.getElementById('link-form').addEventListener('submit', function(e) {
         return response.text();
     })
     .then(html => {
-        document.getElementById('source-' + source).innerHTML = html;
+        setSourceListHTML(source, html);
         closeModal();
-        updateBulkSelection();
-        // Update the unlinked count in the header
-        const headerEl = document.querySelector('#source-' + source).previousElementSibling;
-        if (headerEl) {
-            const countEl = headerEl.querySelector('.text-xs');
-            if (countEl) {
-                const currentCount = parseInt(countEl.textContent) || 0;
-                countEl.textContent = (currentCount - 1) + ' unlinked';
-            }
-        }
+        loadSuggestions(true);
     })
     .catch(error => {
         console.error('Error:', error);
@@ -389,7 +656,7 @@ document.getElementById('bulk-link-form').addEventListener('submit', async funct
             const response = await fetch('/link/source/' + source);
             if (response.ok) {
                 const html = await response.text();
-                document.getElementById('source-' + source).innerHTML = html;
+                setSourceListHTML(source, html);
             }
         } catch (error) {
             console.error('Error refreshing source:', error);
@@ -399,6 +666,11 @@ document.getElementById('bulk-link-form').addEventListener('submit', async funct
     // Clear selection
     selectedProducts = [];
     updateBulkSelection();
+    loadSuggestions(true);
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadSuggestions(true);
 });
 </script>
 {% endblock %}
