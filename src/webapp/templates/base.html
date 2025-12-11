@@ -37,9 +37,6 @@
                         <a href="/link" class="{% if request.url.path == '/link' %}border-indigo-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
                             Link Products
                         </a>
-                        <a href="/unlinked" class="{% if request.url.path == '/unlinked' %}border-indigo-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            Unlinked
-                        </a>
                         <a href="/prices" class="{% if '/prices' in request.url.path %}border-indigo-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
                             Prices
                         </a>
@@ -62,5 +59,33 @@
     </main>
 
     {% block scripts %}{% endblock %}
+
+    <script>
+        // Dev auto-refresh: SSE connection detects server restarts
+        (function() {
+            let serverId = null;
+
+            function connect() {
+                const es = new EventSource('/api/live-reload');
+
+                es.onmessage = (e) => {
+                    if (serverId === null) {
+                        serverId = e.data;
+                    } else if (serverId !== e.data) {
+                        console.log('Server restarted, refreshing...');
+                        location.reload();
+                    }
+                };
+
+                es.onerror = () => {
+                    es.close();
+                    // Reconnect after brief delay
+                    setTimeout(connect, 500);
+                };
+            }
+
+            connect();
+        })();
+    </script>
 </body>
 </html>

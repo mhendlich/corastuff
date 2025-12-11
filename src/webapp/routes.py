@@ -3,13 +3,16 @@
 import asyncio
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 
 from ..scrapers import get_scraper, list_scrapers
 from ..scheduler import get_scheduler, init_scheduler
+from ..job_queue import JobQueue
 from .auth import (
+    SERVER_ID,
     create_session,
     invalidate_session,
     is_valid_session,
@@ -22,13 +25,10 @@ router = APIRouter()
 
 class ScraperStatus(Enum):
     IDLE = "idle"
+    PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
-
-
-# In-memory task tracking (lost on restart, which is fine)
-scraper_tasks: dict[str, dict] = {}
 
 
 def get_db(request: Request):
@@ -103,6 +103,43 @@ async def logout(request: Request):
     response = RedirectResponse("/login", status_code=303)
     response.delete_cookie("session_token")
     return response
+
+
+@router.get("/api/server-id")
+async def get_server_id():
+    """Return server ID for dev auto-refresh detection."""
+    return {"server_id": SERVER_ID}
+
+
+def _get_templates_mtime() -> float:
+    """Get the latest modification time of all template files."""
+    templates_dir = Path(__file__).parent / "templates"
+    max_mtime = 0.0
+    for f in templates_dir.rglob("*.html"):
+        max_mtime = max(max_mtime, f.stat().st_mtime)
+    return max_mtime
+
+
+@router.get("/api/live-reload")
+async def live_reload_stream():
+    """SSE stream for live reload - detects server restarts and template changes."""
+    async def event_stream():
+        last_mtime = _get_templates_mtime()
+        # Send initial version (server ID + mtime)
+        yield f"data: {SERVER_ID}:{last_mtime}\n\n"
+        # Check for template changes periodically
+        while True:
+            await asyncio.sleep(1)
+            current_mtime = _get_templates_mtime()
+            if current_mtime != last_mtime:
+                last_mtime = current_mtime
+                yield f"data: {SERVER_ID}:{current_mtime}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # --- Dashboard ---
@@ -361,31 +398,6 @@ async def unlink_product(
     return RedirectResponse("/link", status_code=303)
 
 
-# --- Unlinked Products ---
-
-
-@router.get("/unlinked", response_class=HTMLResponse)
-async def list_unlinked_products(request: Request, _: str = Depends(require_auth)):
-    """List all unlinked products."""
-    db = get_db(request)
-    products = db.get_unlinked_products()
-    sources = db.get_sources()
-
-    # Group by source
-    products_by_source = {}
-    for source in sources:
-        products_by_source[source] = [p for p in products if p["source"] == source]
-
-    return templates(request).TemplateResponse(
-        "unlinked/list.html",
-        {
-            "request": request,
-            "products_by_source": products_by_source,
-            "total_count": len(products),
-        },
-    )
-
-
 # --- HTMX Partials ---
 
 
@@ -423,9 +435,24 @@ async def stats_partial(request: Request, _: str = Depends(require_auth)):
 
 
 def _get_scraper_info(name: str, db, last_run_confirmed: bool = False) -> dict:
-    """Get scraper info including status and last run data."""
-    task = scraper_tasks.get(name, {})
-    status = task.get("status", ScraperStatus.IDLE.value)
+    """Get scraper info including status and last run data from job queue."""
+    queue = JobQueue(db)
+
+    # Check for active job in queue
+    active_job = queue.get_active_job(name)
+
+    if active_job:
+        status = active_job["status"]
+        error = active_job["error_message"]
+        started_at = active_job["claimed_at"] or active_job["created_at"]
+        # Get products_found from scrape_runs if available
+        run = db.get_scrape_run(active_job["scrape_run_id"]) if active_job["scrape_run_id"] else None
+        products_found = run["products_found"] if run else None
+    else:
+        status = ScraperStatus.IDLE.value
+        error = None
+        started_at = None
+        products_found = None
 
     # Get last scrape info from db
     history = db.get_scrape_history(name)
@@ -436,10 +463,10 @@ def _get_scraper_info(name: str, db, last_run_confirmed: bool = False) -> dict:
         "status": status,
         "last_run": last_run["scraped_at"] if last_run else None,
         "last_count": last_run["product_count"] if last_run else None,
-        "error": task.get("error"),
-        "started_at": task.get("started_at"),
-        "completed_at": task.get("completed_at"),
-        "products_found": task.get("products_found"),
+        "error": error,
+        "started_at": started_at,
+        "completed_at": None,
+        "products_found": products_found,
         "last_run_confirmed": last_run_confirmed,
     }
 
@@ -462,45 +489,20 @@ async def scrapers_page(request: Request, _: str = Depends(require_auth)):
 
 @router.post("/scrapers/{name}/run", response_class=HTMLResponse)
 async def run_scraper(request: Request, name: str, _: str = Depends(require_auth)):
-    """Start a scraper in the background."""
+    """Enqueue a scraper job."""
     db = get_db(request)
+    queue = JobQueue(db)
 
     # Validate scraper name
     if name not in list_scrapers():
         raise HTTPException(status_code=404, detail=f"Scraper '{name}' not found")
 
-    # Check if already running
-    if scraper_tasks.get(name, {}).get("status") == ScraperStatus.RUNNING.value:
-        raise HTTPException(status_code=409, detail=f"Scraper '{name}' is already running")
+    # Check if already queued or running
+    if queue.is_scraper_queued_or_running(name):
+        raise HTTPException(status_code=409, detail=f"Scraper '{name}' is already queued or running")
 
-    # Initialize task state
-    scraper_tasks[name] = {
-        "status": ScraperStatus.RUNNING.value,
-        "started_at": datetime.utcnow().isoformat(),
-        "error": None,
-        "products_found": None,
-        "completed_at": None,
-    }
-
-    # Run scraper in background
-    async def run_scraper_task():
-        try:
-            scraper = get_scraper(name)
-            result = await scraper.scrape()
-            db.save_results(result)
-            scraper_tasks[name].update({
-                "status": ScraperStatus.COMPLETED.value,
-                "completed_at": datetime.utcnow().isoformat(),
-                "products_found": len(result.products),
-            })
-        except Exception as e:
-            scraper_tasks[name].update({
-                "status": ScraperStatus.FAILED.value,
-                "completed_at": datetime.utcnow().isoformat(),
-                "error": str(e),
-            })
-
-    asyncio.create_task(run_scraper_task())
+    # Enqueue the job (worker will execute it)
+    queue.enqueue(name, source="manual")
 
     # Return updated row for HTMX
     info = _get_scraper_info(name, db)
@@ -515,43 +517,18 @@ async def run_scraper(request: Request, name: str, _: str = Depends(require_auth
 
 @router.post("/scrapers/run-all", response_class=HTMLResponse)
 async def run_all_scrapers(request: Request, _: str = Depends(require_auth)):
-    """Start all scrapers in parallel."""
+    """Enqueue all scrapers."""
     db = get_db(request)
+    queue = JobQueue(db)
     scraper_names = list_scrapers()
 
     for name in scraper_names:
-        # Skip if already running
-        if scraper_tasks.get(name, {}).get("status") == ScraperStatus.RUNNING.value:
+        # Skip if already queued or running
+        if queue.is_scraper_queued_or_running(name):
             continue
 
-        # Initialize task state
-        scraper_tasks[name] = {
-            "status": ScraperStatus.RUNNING.value,
-            "started_at": datetime.utcnow().isoformat(),
-            "error": None,
-            "products_found": None,
-            "completed_at": None,
-        }
-
-        # Run scraper in background
-        async def run_scraper_task(scraper_name: str):
-            try:
-                scraper = get_scraper(scraper_name)
-                result = await scraper.scrape()
-                db.save_results(result)
-                scraper_tasks[scraper_name].update({
-                    "status": ScraperStatus.COMPLETED.value,
-                    "completed_at": datetime.utcnow().isoformat(),
-                    "products_found": len(result.products),
-                })
-            except Exception as e:
-                scraper_tasks[scraper_name].update({
-                    "status": ScraperStatus.FAILED.value,
-                    "completed_at": datetime.utcnow().isoformat(),
-                    "error": str(e),
-                })
-
-        asyncio.create_task(run_scraper_task(name))
+        # Enqueue the job
+        queue.enqueue(name, source="manual")
 
     # Return full table body for HTMX
     scrapers = [_get_scraper_info(name, db) for name in scraper_names]
@@ -729,9 +706,6 @@ async def reset_all_data(request: Request, _: str = Depends(require_auth)):
     db = get_db(request)
     counts = db.reset_all()
 
-    # Clear in-memory scraper task states
-    scraper_tasks.clear()
-
     # Return a confirmation message
     return templates(request).TemplateResponse(
         "admin/_reset_result.html",
@@ -872,5 +846,56 @@ async def scheduler_status_partial(request: Request, _: str = Depends(require_au
         {
             "request": request,
             "scheduler_status": status,
+        },
+    )
+
+
+# --- Scrape History ---
+
+
+@router.get("/scrapers/history", response_class=HTMLResponse)
+async def scrape_history_page(
+    request: Request,
+    scraper: str | None = None,
+    status: str | None = None,
+    _: str = Depends(require_auth),
+):
+    """Scrape run history page."""
+    db = get_db(request)
+    scraper_names = list_scrapers()
+
+    # Get runs with optional filters
+    runs = db.get_scrape_runs(scraper_name=scraper, status=status, limit=100)
+
+    # Get stats
+    stats = db.get_scrape_run_stats()
+
+    return templates(request).TemplateResponse(
+        "scrapers/history.html",
+        {
+            "request": request,
+            "runs": runs,
+            "stats": stats,
+            "scraper_names": scraper_names,
+            "selected_scraper": scraper,
+            "selected_status": status,
+        },
+    )
+
+
+@router.get("/scrapers/history/{run_id}", response_class=HTMLResponse)
+async def scrape_run_detail(request: Request, run_id: int, _: str = Depends(require_auth)):
+    """Detail view of a specific scrape run."""
+    db = get_db(request)
+
+    run = db.get_scrape_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Scrape run not found")
+
+    return templates(request).TemplateResponse(
+        "scrapers/run_detail.html",
+        {
+            "request": request,
+            "run": run,
         },
     )

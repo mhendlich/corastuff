@@ -7,6 +7,13 @@
     <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold text-gray-900">Scraper Management</h1>
         <div class="flex space-x-3">
+            <a href="/scrapers/history"
+                class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                </svg>
+                History
+            </a>
             <a href="/scrapers/schedules"
                 class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                 <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -57,8 +64,8 @@
     </div>
 
     <div class="mt-6 text-sm text-gray-500">
-        <p><strong>Note:</strong> Scrapers run in the background. The page will automatically update when a scraper completes.</p>
-        <p class="mt-1">Some scrapers (like Kaufland) may take 60+ seconds due to anti-bot measures.</p>
+        <p><strong>Note:</strong> Jobs are queued and executed by the worker process. Run <code class="bg-gray-100 px-1 rounded">python -m src.cli --worker</code> to start the worker.</p>
+        <p class="mt-1">The page will automatically update when a scraper completes. Some scrapers may take 60+ seconds due to anti-bot measures.</p>
     </div>
 </div>
 {% endblock %}

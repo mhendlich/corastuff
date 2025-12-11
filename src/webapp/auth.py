@@ -1,7 +1,9 @@
 """Simple authentication for the webapp."""
 
+import json
 import secrets
 from functools import wraps
+from pathlib import Path
 from typing import Callable
 
 from fastapi import Cookie, Depends, HTTPException, Request, status
@@ -10,9 +12,32 @@ from fastapi.responses import RedirectResponse
 # Hardcoded master password
 MASTER_PASSWORD = "iloveanal"
 
-# In-memory session store (simple token-based)
-# In production, use Redis or database-backed sessions
-active_sessions: set[str] = set()
+# File-based session store for persistence across restarts
+SESSIONS_FILE = Path(__file__).parent.parent.parent / "data" / "sessions.json"
+
+# Unique server ID generated at startup (for dev auto-refresh)
+SERVER_ID = secrets.token_hex(8)
+
+
+def _load_sessions() -> set[str]:
+    """Load sessions from file."""
+    if SESSIONS_FILE.exists():
+        try:
+            data = json.loads(SESSIONS_FILE.read_text())
+            return set(data.get("sessions", []))
+        except (json.JSONDecodeError, IOError):
+            pass
+    return set()
+
+
+def _save_sessions(sessions: set[str]) -> None:
+    """Save sessions to file."""
+    SESSIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SESSIONS_FILE.write_text(json.dumps({"sessions": list(sessions)}))
+
+
+# Load sessions from file on module load
+active_sessions: set[str] = _load_sessions()
 
 
 def verify_password(password: str) -> bool:
@@ -24,6 +49,7 @@ def create_session() -> str:
     """Create a new session token."""
     token = secrets.token_urlsafe(32)
     active_sessions.add(token)
+    _save_sessions(active_sessions)
     return token
 
 
@@ -37,6 +63,7 @@ def is_valid_session(token: str | None) -> bool:
 def invalidate_session(token: str) -> None:
     """Invalidate a session token."""
     active_sessions.discard(token)
+    _save_sessions(active_sessions)
 
 
 async def get_current_session(

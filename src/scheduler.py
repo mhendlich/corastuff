@@ -10,7 +10,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .db import ProductDatabase
 
-from .scrapers import get_scraper, list_scrapers
+from .scrapers import list_scrapers
+from .job_queue import JobQueue
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +28,10 @@ class ScraperScheduler:
             check_interval: Seconds between checks for due schedules (default: 60)
         """
         self.db = db
+        self.queue = JobQueue(db)
         self.check_interval = check_interval
         self._task: asyncio.Task | None = None
         self._running = False
-        self._active_scrapers: set[str] = set()
 
     @property
     def is_running(self) -> bool:
@@ -67,54 +68,47 @@ class ScraperScheduler:
             await asyncio.sleep(self.check_interval)
 
     async def _check_and_run_due_scrapers(self):
-        """Check for due schedules and run scrapers."""
+        """Check for due schedules and enqueue scraper jobs."""
         due_schedules = self.db.get_due_schedules()
 
         for schedule in due_schedules:
             scraper_name = schedule["scraper_name"]
 
-            # Skip if already running
-            if scraper_name in self._active_scrapers:
-                logger.debug(f"Scraper {scraper_name} is already running, skipping")
+            # Skip if already queued or running
+            if self.queue.is_scraper_queued_or_running(scraper_name):
+                logger.debug(f"Scraper {scraper_name} is already queued/running, skipping")
                 continue
 
-            # Run the scraper
-            asyncio.create_task(self._run_scraper(scraper_name, schedule))
+            # Enqueue the job (worker will execute it)
+            self._enqueue_scheduled_job(scraper_name, schedule)
 
-    async def _run_scraper(self, scraper_name: str, schedule: dict):
-        """Run a single scraper and update its schedule."""
-        self._active_scrapers.add(scraper_name)
-        logger.info(f"Scheduled run starting for: {scraper_name}")
+    def _enqueue_scheduled_job(self, scraper_name: str, schedule: dict):
+        """Enqueue a scheduled scraper job and update schedule timestamps."""
+        # Enqueue with scheduled source
+        job_id = self.queue.enqueue(scraper_name, source="scheduled")
+        logger.info(f"Scheduled job enqueued for {scraper_name}: job_id={job_id}")
 
-        try:
-            scraper = get_scraper(scraper_name)
-            result = await scraper.scrape()
-            self.db.save_results(result)
-            logger.info(f"Scheduled run completed for {scraper_name}: {len(result.products)} products")
-        except Exception as e:
-            logger.error(f"Scheduled run failed for {scraper_name}: {e}")
-        finally:
-            # Update schedule with last_run and calculate next_run
-            now = datetime.now(UTC)
-            interval_minutes = schedule["interval_minutes"]
-            next_run = now + timedelta(minutes=interval_minutes)
+        # Update schedule with last_run and calculate next_run
+        now = datetime.now(UTC)
+        interval_minutes = schedule["interval_minutes"]
+        next_run = now + timedelta(minutes=interval_minutes)
 
-            self.db.update_schedule_last_run(
-                scraper_name,
-                now.isoformat(),
-                next_run.isoformat(),
-            )
-
-            self._active_scrapers.discard(scraper_name)
+        self.db.update_schedule_last_run(
+            scraper_name,
+            now.isoformat(),
+            next_run.isoformat(),
+        )
 
     def get_status(self) -> dict:
         """Get current scheduler status."""
         schedules = self.db.get_all_schedules()
         enabled_count = sum(1 for s in schedules if s["enabled"])
+        queue_status = self.queue.get_queue_status()
 
         return {
             "running": self._running,
-            "active_scrapers": list(self._active_scrapers),
+            "pending_jobs": queue_status["pending"],
+            "running_jobs": queue_status["running"],
             "total_schedules": len(schedules),
             "enabled_schedules": enabled_count,
             "check_interval": self.check_interval,

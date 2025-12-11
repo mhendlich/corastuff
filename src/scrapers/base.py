@@ -5,9 +5,10 @@ from abc import ABC, abstractmethod
 from datetime import datetime, UTC
 from pathlib import Path
 
-from playwright.async_api import async_playwright, Page
+from playwright.async_api import Page
 
 from ..models import Product, ScrapeResult
+from .browser_pool import get_browser_context
 
 
 class BaseScraper(ABC):
@@ -25,18 +26,15 @@ class BaseScraper(ABC):
         ...
 
     async def scrape(self) -> ScrapeResult:
-        """Run the scraper and return results."""
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
+        """Run the scraper and return results using shared browser pool."""
+        async with get_browser_context() as context:
+            page = await context.new_page()
 
             print(f"[{self.name}] Loading {self.url}...")
             await page.goto(self.url, wait_until="networkidle")
 
             products = await self.extract_products(page)
             print(f"[{self.name}] Extracted {len(products)} products")
-
-            await browser.close()
 
         return ScrapeResult(
             source=self.name,

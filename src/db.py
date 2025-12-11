@@ -93,6 +93,54 @@ class ProductDatabase:
                 )
             """)
 
+            # Scrape runs - history of all scrape job executions
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS scrape_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scraper_name TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    started_at TEXT NOT NULL,
+                    completed_at TEXT,
+                    products_found INTEGER,
+                    error_message TEXT,
+                    duration_seconds REAL
+                )
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_scrape_runs_scraper
+                ON scrape_runs (scraper_name, started_at DESC)
+            """)
+
+            # Job queue - persistent queue for scrape jobs (survives restarts)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS job_queue (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scraper_name TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    priority INTEGER DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    claimed_at TEXT,
+                    completed_at TEXT,
+                    worker_id TEXT,
+                    scrape_run_id INTEGER,
+                    error_message TEXT,
+                    retry_count INTEGER DEFAULT 0,
+                    max_retries INTEGER DEFAULT 3,
+                    FOREIGN KEY (scrape_run_id) REFERENCES scrape_runs(id)
+                )
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_job_queue_status
+                ON job_queue (status, priority DESC, created_at ASC)
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_job_queue_scraper
+                ON job_queue (scraper_name, status)
+            """)
+
             conn.commit()
 
     def save_results(self, result: ScrapeResult):
@@ -448,6 +496,22 @@ class ProductDatabase:
             except sqlite3.OperationalError:
                 pass  # Table doesn't exist yet
 
+            # Also clear scrape runs if table exists
+            try:
+                runs_count = conn.execute("SELECT COUNT(*) FROM scrape_runs").fetchone()[0]
+                conn.execute("DELETE FROM scrape_runs")
+                counts["scrape_runs"] = runs_count
+            except sqlite3.OperationalError:
+                pass  # Table doesn't exist yet
+
+            # Also clear job queue if table exists
+            try:
+                queue_count = conn.execute("SELECT COUNT(*) FROM job_queue").fetchone()[0]
+                conn.execute("DELETE FROM job_queue")
+                counts["job_queue"] = queue_count
+            except sqlite3.OperationalError:
+                pass  # Table doesn't exist yet
+
             conn.commit()
 
         print(f"[db] Reset database: {counts}")
@@ -610,3 +674,118 @@ class ProductDatabase:
                 """
             )
             return {row["source"]: row["last_scraped"] for row in cursor.fetchall()}
+
+    # --- Scrape Runs ---
+
+    def create_scrape_run(self, scraper_name: str, started_at: str) -> int:
+        """Create a new scrape run record and return its ID."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO scrape_runs (scraper_name, status, started_at)
+                VALUES (?, 'running', ?)
+                """,
+                (scraper_name, started_at),
+            )
+            conn.commit()
+            return cursor.lastrowid
+
+    def complete_scrape_run(
+        self,
+        run_id: int,
+        status: str,
+        completed_at: str,
+        products_found: int | None = None,
+        error_message: str | None = None,
+        duration_seconds: float | None = None,
+    ):
+        """Update a scrape run with completion details."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE scrape_runs
+                SET status = ?, completed_at = ?, products_found = ?,
+                    error_message = ?, duration_seconds = ?
+                WHERE id = ?
+                """,
+                (status, completed_at, products_found, error_message, duration_seconds, run_id),
+            )
+            conn.commit()
+
+    def get_scrape_runs(
+        self,
+        scraper_name: str | None = None,
+        limit: int = 100,
+        status: str | None = None,
+    ) -> list[dict]:
+        """Get scrape run history, optionally filtered by scraper name and status."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            query = "SELECT * FROM scrape_runs WHERE 1=1"
+            params = []
+
+            if scraper_name:
+                query += " AND scraper_name = ?"
+                params.append(scraper_name)
+
+            if status:
+                query += " AND status = ?"
+                params.append(status)
+
+            query += " ORDER BY started_at DESC LIMIT ?"
+            params.append(limit)
+
+            cursor = conn.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_scrape_run(self, run_id: int) -> dict | None:
+        """Get a specific scrape run by ID."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                "SELECT * FROM scrape_runs WHERE id = ?",
+                (run_id,),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_scrape_run_stats(self) -> dict:
+        """Get statistics about scrape runs."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+
+            # Total runs
+            total = conn.execute("SELECT COUNT(*) FROM scrape_runs").fetchone()[0]
+
+            # Successful runs
+            successful = conn.execute(
+                "SELECT COUNT(*) FROM scrape_runs WHERE status = 'completed'"
+            ).fetchone()[0]
+
+            # Failed runs
+            failed = conn.execute(
+                "SELECT COUNT(*) FROM scrape_runs WHERE status = 'failed'"
+            ).fetchone()[0]
+
+            # Running
+            running = conn.execute(
+                "SELECT COUNT(*) FROM scrape_runs WHERE status = 'running'"
+            ).fetchone()[0]
+
+            # Recent failures (last 24h)
+            recent_failures = conn.execute(
+                """
+                SELECT COUNT(*) FROM scrape_runs
+                WHERE status = 'failed'
+                AND started_at >= datetime('now', '-24 hours')
+                """
+            ).fetchone()[0]
+
+            return {
+                "total": total,
+                "successful": successful,
+                "failed": failed,
+                "running": running,
+                "recent_failures": recent_failures,
+                "success_rate": (successful / total * 100) if total > 0 else 0,
+            }

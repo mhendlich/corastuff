@@ -26,9 +26,9 @@
                     </span>
                     {% endif %}
 
-                    {% if scheduler_status.active_scrapers %}
+                    {% if scheduler_status.pending_jobs or scheduler_status.running_jobs %}
                     <span class="ml-4 text-sm text-blue-600">
-                        Active: {{ scheduler_status.active_scrapers | join(', ') }}
+                        Queue: {{ scheduler_status.pending_jobs }} pending, {{ scheduler_status.running_jobs }} running
                     </span>
                     {% endif %}
                 </div>
