@@ -113,13 +113,65 @@ class GalaxusBaseScraper(BaseScraper):
                     price_text = await price_container.inner_text()
                     price, currency = parse_price(price_text)
 
+                # Try to fetch the product image
+                image_bytes = None
+                image_mime = None
+                image_url = None
+
+                try:
+                    await article.scroll_into_view_if_needed()
+                    await page.wait_for_timeout(100)
+                except Exception:
+                    pass
+
+                img_el = None
+                for _ in range(4):
+                    if not img_el:
+                        img_el = await article.query_selector("picture img") or await article.query_selector("img")
+                    if img_el:
+                        image_url = (
+                            await img_el.get_attribute("src")
+                            or await img_el.get_attribute("data-src")
+                            or await img_el.get_attribute("data-srcset")
+                            or await img_el.get_attribute("srcset")
+                        )
+                        if image_url:
+                            if "," in image_url:
+                                image_url = image_url.split(",")[0].split()[0]
+                            break
+                    await page.wait_for_timeout(150)
+
+                if not image_url:
+                    source_el = await article.query_selector("picture source[srcset]")
+                    if source_el:
+                        image_url = await source_el.get_attribute("srcset")
+                        if image_url and "," in image_url:
+                            image_url = image_url.split(",")[0].split()[0]
+
+                if image_url:
+                    if image_url.startswith("//"):
+                        image_url = f"https:{image_url}"
+                    elif image_url.startswith("/"):
+                        image_url = f"{self.base_url}{image_url}"
+
+                    try:
+                        response = await page.context.request.get(image_url)
+                        if response.ok:
+                            image_bytes = await response.body()
+                            image_mime = response.headers.get("content-type")
+                            if image_mime and ";" in image_mime:
+                                image_mime = image_mime.split(";", 1)[0].strip()
+                    except Exception as img_err:
+                        print(f"[{self.name}] Failed to fetch image for {name}: {img_err}")
+
                 products.append(Product(
                     name=name,
                     price=price,
                     currency=currency,
                     url=url,
                     item_id=item_id,
-                    image=None,
+                    image=image_bytes,
+                    image_mime=image_mime,
                 ))
 
             except Exception as e:

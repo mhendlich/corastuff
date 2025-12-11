@@ -129,6 +129,8 @@ def run_serve() -> int:
                 "--host", "0.0.0.0",
                 "--port", "8010",
                 "--reload",
+                # Bound graceful shutdown so reloads don't hang on long-lived connections (eg SSE)
+                "--timeout-graceful-shutdown", "5",
             ],
             cwd=Path(__file__).parent.parent,
         )

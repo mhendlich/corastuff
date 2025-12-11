@@ -14,3 +14,6 @@ playwright>=1.49.0
 
 # Development tools
 ipython>=8.30.0
+
+# Image processing
+pillow>=11.0.0

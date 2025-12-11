@@ -55,7 +55,7 @@ def create_app(db: ProductDatabase | None = None, auto_start_scheduler: bool = T
             scheduler.stop()
 
     app = FastAPI(
-        title="Corastuff Product Manager",
+        title="Blackroll Scraper Product Manager",
         description="Manage and link products across different sources",
         version="0.1.0",
         lifespan=lifespan,

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Corastuff{% endblock %}</title>
+    <title>{% block title %}Blackroll Scraper{% endblock %}</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -49,14 +49,16 @@
 </head>
 <body class="app-body h-screen overflow-hidden antialiased">
     <div class="flex h-full">
-        <aside id="sidebar" class="app-sidebar w-72 shrink-0 flex flex-col">
+        <aside id="sidebar" class="app-sidebar w-72 md:w-80 shrink-0 flex flex-col">
             <div class="px-5 pt-5 pb-4 flex items-center justify-between">
-                <a href="/" class="flex items-center gap-3">
+                <a href="/" class="flex items-center gap-3 min-w-0 flex-1">
                     <div class="h-9 w-9 rounded-xl bg-gradient-to-br from-brand to-brand-cyan grid place-items-center shadow-lg shadow-brand/40">
-                        <span class="font-display text-lg text-white">C</span>
+                        <span class="font-display text-lg text-white">B</span>
                     </div>
-                    <div class="sidebar-title">
-                        <div class="font-display text-lg tracking-tight text-white">Corastuff</div>
+                    <div class="sidebar-title min-w-0">
+                        <div class="brand-name font-display text-lg leading-tight tracking-tight text-white break-words">
+                            Blackroll Scraper
+                        </div>
                         <div class="text-xs text-slate-400">Product Manager</div>
                     </div>
                 </a>

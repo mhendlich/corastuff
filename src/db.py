@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import sqlite3
 import hashlib
+from io import BytesIO
 from datetime import datetime
 from pathlib import Path
+
+from PIL import Image
 
 from .models import Product, ScrapeResult
 
@@ -577,6 +580,26 @@ class ProductDatabase:
                 return cleaned
         return ""
 
+    def _process_image(self, image_bytes: bytes, mime_type: str | None) -> tuple[bytes, str]:
+        """Resize and convert product images to WebP before storage."""
+        try:
+            with Image.open(BytesIO(image_bytes)) as img:
+                resample = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
+                # Preserve transparency when present
+                if "A" in img.getbands():
+                    img = img.convert("RGBA")
+                else:
+                    img = img.convert("RGB")
+                img.thumbnail((512, 512), resample=resample)
+
+                buffer = BytesIO()
+                img.save(buffer, format="WEBP", quality=80, method=6)
+                return buffer.getvalue(), "image/webp"
+        except Exception as exc:
+            # Fall back to the original bytes if processing fails
+            print(f"[db] Failed to process image, storing original: {exc}")
+            return image_bytes, mime_type or "image/jpeg"
+
     def _upsert_product_image(self, conn: sqlite3.Connection, source: str, product: Product, product_key: str) -> None:
         """Store or update the latest image for a product if provided."""
         if not product.image or not product_key:
@@ -589,8 +612,11 @@ class ProductDatabase:
             image_bytes = product.image.tobytes()
         else:
             image_bytes = bytes(product.image)
-        image_hash = hashlib.sha256(image_bytes).hexdigest()
         mime_type = product.image_mime or "image/jpeg"
+
+        # Convert and downsize before hashing/storing
+        image_bytes, mime_type = self._process_image(image_bytes, mime_type)
+        image_hash = hashlib.sha256(image_bytes).hexdigest()
         now = datetime.utcnow().isoformat()
 
         existing = conn.execute(
@@ -628,8 +654,7 @@ class ProductDatabase:
                 (source, product_key, product.item_id, product.url, image_bytes, image_hash, mime_type, now, now),
             )
 
-        print(f"[db] Reset database: {counts}")
-        return counts
+        return None
 
     # --- Scraper Schedules ---
 

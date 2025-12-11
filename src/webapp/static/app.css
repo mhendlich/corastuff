@@ -155,3 +155,14 @@
     background: transparent;
 }
 
+/* Modal overlays should feel solid enough to isolate the dialog */
+.modal-overlay {
+    background: rgba(2, 4, 12, 0.94) !important;
+    backdrop-filter: blur(8px) !important;
+}
+
+.modal-surface {
+    background: #0b1020 !important;
+    border: 1px solid rgba(255, 255, 255, 0.22) !important;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.65);
+}

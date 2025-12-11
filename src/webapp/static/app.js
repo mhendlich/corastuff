@@ -1,6 +1,6 @@
 (function () {
     const root = document.documentElement;
-    const storageKey = "corastuff.sidebar.collapsed";
+    const storageKey = "blackroll-scraper.sidebar.collapsed";
 
     function setCollapsed(collapsed) {
         root.dataset.sidebarCollapsed = collapsed ? "true" : "false";
@@ -38,4 +38,3 @@
         }
     });
 })();
-
