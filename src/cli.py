@@ -47,13 +47,17 @@ async def run_all_parallel(scrapers: list[BaseScraper], db: ProductDatabase) -> 
     print(f"Running {len(scrapers)} scraper(s) in parallel...")
     start = time.perf_counter()
 
-    async with asyncio.TaskGroup() as tg:
-        tasks = [tg.create_task(run_scraper(s)) for s in scrapers]
+    try:
+        async with asyncio.TaskGroup() as tg:
+            tasks = [tg.create_task(run_scraper(s)) for s in scrapers]
 
-    # Save results to database
-    for task in tasks:
-        if (result := task.result()) and result.products:
-            db.save_results(result)
+        # Save results to database
+        for task in tasks:
+            if (result := task.result()) and result.products:
+                db.save_results(result)
+    finally:
+        from .scrapers.browser_pool import BrowserPool
+        await BrowserPool.shutdown()
 
     elapsed = time.perf_counter() - start
     print(f"\nAll scrapers completed in {elapsed:.2f}s")
@@ -263,8 +267,12 @@ Examples:
             scraper = get_scraper(args.source)
 
             async def run_single():
-                if result := await run_scraper(scraper):
-                    db.save_results(result)
+                from .scrapers.browser_pool import BrowserPool
+                try:
+                    if result := await run_scraper(scraper):
+                        db.save_results(result)
+                finally:
+                    await BrowserPool.shutdown()
 
             asyncio.run(run_single())
         except ValueError as e:

@@ -17,6 +17,11 @@ class BaseScraper(ABC):
     name: str
     display_name: str
     url: str
+    browser_type: str = "chromium"
+    user_agent: str | None = None
+    locale: str | None = None
+    viewport: dict[str, int] | None = None
+    init_scripts: list[str] | None = None
 
     def __init__(self, output_dir: Path | None = None):
         self.output_dir = output_dir or Path(__file__).parent.parent.parent / "output"
@@ -28,7 +33,13 @@ class BaseScraper(ABC):
 
     async def scrape(self) -> ScrapeResult:
         """Run the scraper and return results using shared browser pool."""
-        async with get_browser_context() as context:
+        async with get_browser_context(
+            browser_type=self.browser_type,
+            user_agent=self.user_agent,
+            locale=self.locale,
+            viewport=self.viewport,
+            init_scripts=self.init_scripts,
+        ) as context:
             page = await context.new_page()
 
             print(f"[{self.name}] Loading {self.url}...")

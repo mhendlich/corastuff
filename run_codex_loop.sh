@@ -6,7 +6,7 @@
 SCRAPER_IDEAS_FILE="scraper-ideas.txt"
 
 # Hardcoded prompt template - customize as needed
-PROMPT_TEMPLATE="Scraper-ideas.txt contains ideas for more scraper targets. Pick the first one off the list, implement a scraper for it and test it. For testing, run the scraper with real data in the same way the web app would and make sure products and images are scraped correctly. If there are issues, try to fix them. If you cannot successfully implement a scraper, remove the entry from the list and put into a failed.txt file (append if it exists already). If you succeeded, just remove the line."
+PROMPT_TEMPLATE="Scraper-ideas.txt contains ideas for more scraper targets. Pick the first one off the list, implement a scraper for it and test it. For testing, run the scraper with real data in the same way the web app would and make sure products and images are scraped correctly. If there are issues, try to fix them. If you cannot successfully implement a scraper, remove the entry from the list and put into a failed.txt file (append if it exists already). If you succeeded, just remove the line. This prompt and agent will be used for many more scrapers - if you make any learnings that are generalizable to other scrapers, please document them in the AGENTS.md file (append if it exists already)."
 
 while true; do
     # Check if file exists
