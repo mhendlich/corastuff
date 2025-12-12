@@ -587,26 +587,177 @@ async def delete_canonical_product(request: Request, product_id: int, _: str = D
 
 @router.get("/link", response_class=HTMLResponse)
 async def link_products_page(request: Request, _: str = Depends(require_auth)):
-    """Side-by-side view for linking products."""
+    """Workbench view for linking products at scale."""
     db = get_db(request)
-    sources = db.get_sources()
-    canonical_products = db.get_all_canonical_products()
+    source_counts = db.get_unlinked_source_counts()
+    total_unlinked = sum(int(r.get("unlinked_total") or 0) for r in source_counts)
 
-    # Get unlinked products grouped by source
-    unlinked = db.get_unlinked_products(include_images=False)
-    products_by_source = {}
-    for source in sources:
-        products_by_source[source] = [p for p in unlinked if p["source"] == source]
+    initial_limit = 60
+    products_plus = db.get_unlinked_products_page(
+        sources=None,
+        query=None,
+        limit=initial_limit + 1,
+        offset=0,
+        include_images=False,
+    )
+    has_more = len(products_plus) > initial_limit
+    products = products_plus[:initial_limit]
+    next_offset = len(products)
 
     return templates(request).TemplateResponse(
-        "link/index.html",
+        "link/workbench.html",
         {
             "request": request,
-            "sources": sources,
-            "canonical_products": canonical_products,
-            "products_by_source": products_by_source,
+            "source_counts": source_counts,
+            "total_unlinked": total_unlinked,
+            "products": products,
+            "has_more": has_more,
+            "next_offset": next_offset,
+            "initial_limit": initial_limit,
         },
     )
+
+@router.get("/link/api/source-counts")
+async def link_source_counts(request: Request, _: str = Depends(require_auth)):
+    """Return unlinked counts per source (latest scrape only)."""
+    db = get_db(request)
+    return {"sources": db.get_unlinked_source_counts()}
+
+
+@router.get("/link/api/unlinked", response_class=HTMLResponse)
+async def link_unlinked_page(
+    request: Request,
+    source: list[str] = Query(default=[]),
+    q: str | None = Query(default=None),
+    limit: int = Query(default=60, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    _: str = Depends(require_auth),
+):
+    """Return a paginated HTML slice of unlinked products."""
+    db = get_db(request)
+    sources = [s for s in source if s] or None
+    products_plus = db.get_unlinked_products_page(
+        sources=sources,
+        query=q,
+        limit=int(limit) + 1,
+        offset=int(offset),
+        include_images=False,
+    )
+    has_more = len(products_plus) > int(limit)
+    products = products_plus[: int(limit)]
+    next_offset = int(offset) + len(products)
+
+    return templates(request).TemplateResponse(
+        "link/_unlinked_list.html",
+        {
+            "request": request,
+            "products": products,
+            "has_more": has_more,
+            "next_offset": next_offset,
+        },
+    )
+
+
+@router.get("/link/api/canonicals")
+async def canonical_search(
+    request: Request,
+    q: str = Query(default=""),
+    limit: int = Query(default=20, ge=1, le=50),
+    _: str = Depends(require_auth),
+):
+    """Search canonical products by name."""
+    db = get_db(request)
+    results = db.search_canonical_products(q, limit=int(limit))
+    return {"results": results}
+
+
+@router.get("/link/api/product-suggestions")
+async def product_suggestions(
+    request: Request,
+    source: str = Query(...),
+    source_item_id: str = Query(default=""),
+    limit: int = Query(default=6, ge=1, le=25),
+    _: str = Depends(require_auth),
+):
+    """Suggest canonicals for a specific unlinked product."""
+    db = get_db(request)
+    suggestions = db.get_canonical_suggestions_for_unlinked_product(
+        source=source,
+        source_item_id=source_item_id,
+        limit=int(limit),
+    )
+    return {"suggestions": suggestions}
+
+
+@router.post("/link/api/link")
+async def api_link_product(request: Request, _: str = Depends(require_auth)):
+    """JSON endpoint: link a source product to an existing canonical."""
+    db = get_db(request)
+    payload = await request.json()
+
+    try:
+        canonical_id = int(payload.get("canonical_id"))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="canonical_id is required") from e
+
+    source = (payload.get("source") or "").strip()
+    source_item_id = str(payload.get("source_item_id") or "")
+
+    if not source:
+        raise HTTPException(status_code=400, detail="source is required")
+
+    db.link_product(canonical_id, source, source_item_id)
+    return {"ok": True}
+
+
+@router.post("/link/api/link-new")
+async def api_link_product_new_canonical(request: Request, _: str = Depends(require_auth)):
+    """JSON endpoint: create a canonical and link a source product to it."""
+    db = get_db(request)
+    payload = await request.json()
+
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+
+    source = (payload.get("source") or "").strip()
+    source_item_id = str(payload.get("source_item_id") or "")
+    if not source:
+        raise HTTPException(status_code=400, detail="source is required")
+
+    canonical_id = db.create_canonical_product(name)
+    db.link_product(canonical_id, source, source_item_id)
+    return {"ok": True, "canonical_id": canonical_id, "canonical_name": name}
+
+
+@router.post("/link/api/bulk-link")
+async def api_bulk_link(request: Request, _: str = Depends(require_auth)):
+    """JSON endpoint: bulk link source products to a canonical."""
+    db = get_db(request)
+    payload = await request.json()
+
+    try:
+        canonical_id = int(payload.get("canonical_id"))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="canonical_id is required") from e
+
+    items = payload.get("items") or []
+    if not isinstance(items, list) or not items:
+        raise HTTPException(status_code=400, detail="items must be a non-empty list")
+
+    linked = 0
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        source = (it.get("source") or "").strip()
+        source_item_id = str(it.get("source_item_id") or "")
+        if not source:
+            continue
+        link_id = db.link_product(canonical_id, source, source_item_id)
+        if link_id is not None:
+            linked += 1
+
+    return {"ok": True, "linked": linked}
 
 
 @router.get("/link/source/{source}", response_class=HTMLResponse)
@@ -653,6 +804,14 @@ async def get_link_suggestions(
     db = get_db(request)
     suggestions = db.get_link_suggestions(limit=limit, exclude_keys=exclude)
 
+    def _image_url(image_hash: str | None, updated_at: str | None) -> str | None:
+        if not image_hash:
+            return None
+        base = f"/media/product-image/{image_hash}"
+        if updated_at:
+            return base + f"?v={updated_at}"
+        return base
+
     payload = []
     for suggestion in suggestions:
         matches_payload: list[dict] = []
@@ -668,8 +827,11 @@ async def get_link_suggestions(
                     "score": match.get("score"),
                     "reasons": match.get("reasons") or [],
                     "matched_name": match.get("matched_name"),
-                    "product_image": _to_data_uri(
-                        match.get("product_image"), match.get("product_image_mime")
+                    "product_image_hash": match.get("product_image_hash"),
+                    "product_image_updated_at": match.get("product_image_updated_at"),
+                    "product_image_url": _image_url(
+                        match.get("product_image_hash"),
+                        match.get("product_image_updated_at"),
                     ),
                 }
             )
@@ -681,8 +843,11 @@ async def get_link_suggestions(
                 "score": suggestion.get("score"),
                 "reasons": suggestion.get("reasons") or [],
                 "linked_names": suggestion.get("linked_names") or [],
-                "canonical_image": _to_data_uri(
-                    suggestion.get("canonical_image"), suggestion.get("canonical_image_mime")
+                "canonical_image_hash": suggestion.get("canonical_image_hash"),
+                "canonical_image_updated_at": suggestion.get("canonical_image_updated_at"),
+                "canonical_image_url": _image_url(
+                    suggestion.get("canonical_image_hash"),
+                    suggestion.get("canonical_image_updated_at"),
                 ),
                 "create_new": bool(suggestion.get("create_new")),
                 "seed_source": suggestion.get("seed_source"),

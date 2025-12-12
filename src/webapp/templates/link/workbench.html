@@ -1,0 +1,919 @@
+{% extends "base.html" %}
+
+{% block title %}Link Products - Blackroll Scraper{% endblock %}
+
+{% block page_title %}Link Products{% endblock %}
+{% block page_subtitle %}
+<p class="mt-1 text-sm text-slate-400">Efficiently link unlinked products across many sources to canonical products</p>
+{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-12 gap-6">
+    <!-- Sources -->
+    <section class="col-span-12 lg:col-span-3 app-card overflow-hidden">
+        <div class="px-4 py-3 bg-white/5 border-b border-white/10">
+            <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <h3 class="text-sm font-semibold text-white">Sources</h3>
+                    <p class="text-xs text-slate-400">
+                        <span id="total-unlinked">{{ total_unlinked }}</span> unlinked
+                    </p>
+                </div>
+                <div class="flex gap-2 shrink-0">
+                    <button type="button" id="sources-select-all" class="app-btn-secondary text-xs px-2 py-1 rounded-md border border-white/10">All</button>
+                    <button type="button" id="sources-select-none" class="app-btn-secondary text-xs px-2 py-1 rounded-md border border-white/10">None</button>
+                </div>
+            </div>
+            <div class="mt-3">
+                <input id="source-filter" type="text" class="app-input w-full rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/60" placeholder="Filter sources…">
+            </div>
+            <label class="mt-3 flex items-center gap-2 text-xs text-slate-400">
+                <input id="sources-show-zero" type="checkbox" class="h-4 w-4 text-brand focus:ring-brand/60 border-white/20 bg-white/5 rounded">
+                Show sources with 0 unlinked
+            </label>
+        </div>
+
+        <div id="sources-list" class="max-h-[680px] overflow-y-auto divide-y divide-white/5">
+            {% for row in source_counts %}
+            <label class="source-row flex items-center gap-2 px-4 py-3 hover:bg-white/5 cursor-pointer" data-source="{{ row.source }}" data-source-name="{{ row.source | lower }}" data-zero="{{ 1 if row.unlinked_total == 0 else 0 }}">
+                <input type="checkbox" class="source-checkbox h-4 w-4 text-brand focus:ring-brand/60 border-white/20 bg-white/5 rounded" value="{{ row.source }}" checked>
+                <span class="text-sm text-white truncate">{{ row.source }}</span>
+                {% if row.unlinked_missing_id %}
+                <span class="ml-auto text-[11px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-200 border border-amber-500/20" title="Some products are missing a stable SKU/ID; linking those is risky.">
+                    missing IDs: {{ row.unlinked_missing_id }}
+                </span>
+                {% endif %}
+                <span class="source-count text-xs text-slate-300 ml-2 tabular-nums" data-source="{{ row.source }}">{{ row.unlinked_total }}</span>
+            </label>
+            {% else %}
+            <div class="px-4 py-10 text-center text-sm text-slate-400">No sources yet. Run scrapers first.</div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <!-- Unlinked queue -->
+    <section class="col-span-12 lg:col-span-6 app-card overflow-hidden">
+        <div class="px-4 py-3 bg-white/5 border-b border-white/10">
+            <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <h3 class="text-sm font-semibold text-white">Unlinked queue</h3>
+                    <p class="text-xs text-slate-400">Click a row to link. Use filters to stay focused.</p>
+                </div>
+                <div class="shrink-0">
+                    <button type="button" id="refresh-unlinked" class="app-btn-secondary text-xs px-3 py-1 rounded-md border border-white/10">Refresh</button>
+                </div>
+            </div>
+            <div class="mt-3 flex gap-3">
+                <input id="product-search" type="text" class="app-input flex-1 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/60" placeholder="Search by name or SKU…">
+            </div>
+            <div id="bulk-bar" class="hidden mt-3 p-3 rounded-lg border border-white/10 bg-white/[0.03]">
+                <div class="flex items-center gap-3">
+                    <span class="text-sm text-slate-200"><span id="bulk-count">0</span> selected</span>
+                    <div class="relative flex-1 min-w-0">
+                        <input id="bulk-canonical-search" type="text" class="app-input w-full rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/60" placeholder="Search canonical to link selected…">
+                        <div id="bulk-canonical-results" class="hidden absolute z-20 mt-2 w-full rounded-lg border border-white/10 bg-slate-950/95 shadow-xl"></div>
+                    </div>
+                    <button type="button" id="bulk-clear" class="app-btn-secondary text-xs px-3 py-2 rounded-md border border-white/10">Clear</button>
+                    <button type="button" id="bulk-link" class="app-btn text-xs px-3 py-2 rounded-md">Link selected</button>
+                </div>
+                <p class="mt-2 text-xs text-slate-400">Bulk links everything selected to one canonical product.</p>
+            </div>
+        </div>
+
+        <div id="unlinked-container" class="max-h-[680px] overflow-y-auto">
+            {% include "link/_unlinked_list.html" %}
+        </div>
+
+        <div class="px-4 py-3 border-t border-white/10 bg-white/5 flex items-center justify-between">
+            <p class="text-xs text-slate-400">
+                Showing <span id="loaded-count" class="text-slate-200">{{ products|length }}</span>
+            </p>
+            <button type="button" id="load-more" class="app-btn-secondary text-xs px-3 py-1 rounded-md border border-white/10 hidden">Load more</button>
+        </div>
+    </section>
+
+    <!-- Link panel -->
+    <section class="col-span-12 lg:col-span-3">
+        <div class="app-card p-4 sticky top-6">
+            <h3 class="text-sm font-semibold text-white">Link panel</h3>
+            <p class="text-xs text-slate-400 mt-1">Pick an item from the queue to start.</p>
+
+            <div id="active-product" class="mt-4 hidden">
+                <div class="flex items-start gap-3 p-3 rounded-lg border border-white/10 bg-white/[0.03]">
+                    <div class="h-14 w-14 rounded-md overflow-hidden border border-white/10 bg-white/5 flex items-center justify-center shrink-0" id="active-image"></div>
+                    <div class="min-w-0 flex-1">
+                        <p id="active-name" class="text-sm font-semibold text-white leading-snug"></p>
+                        <p class="mt-1 text-xs text-slate-400">
+                            <span id="active-source" class="font-semibold text-slate-200"></span>
+                            <span class="text-slate-600">·</span>
+                            <span id="active-sku"></span>
+                        </p>
+                        <p class="mt-1 text-xs text-slate-500" id="active-price"></p>
+                        <a id="active-url" href="#" target="_blank" rel="noreferrer" class="text-xs text-brand-cyan hover:text-white mt-2 inline-block hidden">View source</a>
+                    </div>
+                </div>
+
+                <div id="missing-id-warning" class="hidden mt-3 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10">
+                    <p class="text-xs text-amber-100">This product has no stable SKU/ID. Linking it may incorrectly link other “missing ID” items from the same source.</p>
+                    <label class="mt-2 flex items-center gap-2 text-xs text-amber-100">
+                        <input id="missing-id-ack" type="checkbox" class="h-4 w-4 text-amber-400 focus:ring-amber-400 border-amber-500/40 bg-amber-500/10 rounded">
+                        I understand
+                    </label>
+                </div>
+
+                <div class="mt-4">
+                    <div class="flex items-center justify-between">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Suggestions</p>
+                        <button type="button" id="refresh-product-suggestions" class="app-btn-secondary text-xs px-2 py-1 rounded-md border border-white/10">Refresh</button>
+                    </div>
+                    <div id="product-suggestions" class="mt-2 space-y-2"></div>
+                    <p id="product-suggestions-empty" class="mt-2 text-xs text-slate-500 hidden">No confident suggestions.</p>
+                </div>
+
+                <div class="mt-5">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Link to canonical</p>
+                    <div class="relative mt-2">
+                        <input id="canonical-search" type="text" class="app-input w-full rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/60" placeholder="Search canonical…">
+                        <div id="canonical-results" class="hidden absolute z-20 mt-2 w-full rounded-lg border border-white/10 bg-slate-950/95 shadow-xl"></div>
+                    </div>
+                    <div id="canonical-selected" class="hidden mt-2 text-xs text-slate-300"></div>
+                    <button type="button" id="link-btn" class="app-btn w-full mt-3 py-2 rounded-md text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed" disabled>Link</button>
+                    <label class="mt-2 flex items-center gap-2 text-xs text-slate-400">
+                        <input id="keep-canonical" type="checkbox" class="h-4 w-4 text-brand focus:ring-brand/60 border-white/20 bg-white/5 rounded" checked>
+                        Keep selected canonical for next item
+                    </label>
+                    <label class="mt-1 flex items-center gap-2 text-xs text-slate-400">
+                        <input id="auto-advance" type="checkbox" class="h-4 w-4 text-brand focus:ring-brand/60 border-white/20 bg-white/5 rounded" checked>
+                        Auto-advance to next item
+                    </label>
+                </div>
+
+                <div class="mt-6 pt-5 border-t border-white/10">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Create new canonical</p>
+                    <input id="new-canonical-name" type="text" class="app-input mt-2 w-full rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/60" placeholder="New canonical name…">
+                    <button type="button" id="create-link-btn" class="app-btn-secondary w-full mt-3 py-2 rounded-md text-sm font-semibold border border-white/10">Create & link</button>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+
+<div class="mt-6 app-card p-5 border border-white/10 bg-gradient-to-br from-white/10 via-white/[0.04] to-transparent">
+    <details id="suggestions-details">
+        <summary class="cursor-pointer list-none">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-brand-soft">Smart suggestions</p>
+                    <h3 class="text-lg font-semibold text-white">Auto-detected high-confidence matches</h3>
+                    <p class="text-sm text-slate-400">Review and apply bulk links without scanning source-by-source.</p>
+                </div>
+                <div class="shrink-0">
+                    <button type="button" id="suggestions-refresh" class="app-btn-secondary text-xs px-3 py-1 rounded-md border border-white/10">Rescan</button>
+                </div>
+            </div>
+        </summary>
+
+        <div id="suggestion-loading" class="text-sm text-slate-400 mt-4">Loading suggestions…</div>
+        <div id="suggestion-empty" class="text-sm text-slate-400 mt-4 hidden">No confident suggestions yet.</div>
+        <div id="suggestion-list" class="hidden mt-4 space-y-3"></div>
+    </details>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const LINK_LIMIT_DEFAULT = {{ initial_limit }};
+const initialNextOffset = {{ next_offset }};
+const initialHasMore = {{ 1 if has_more else 0 }};
+
+const state = {
+    limit: LINK_LIMIT_DEFAULT,
+    query: '',
+    selectedSources: new Set(),
+    selectedProduct: null,
+    selectedCanonical: null,
+    loadingUnlinked: false,
+    loadingSuggestions: false,
+    dismissedSuggestionKeys: new Set(),
+};
+
+function debounce(fn, waitMs) {
+    let t = null;
+    return (...args) => {
+        if (t) clearTimeout(t);
+        t = setTimeout(() => fn(...args), waitMs);
+    };
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function imageUrl(hash, updatedAt) {
+    const h = String(hash || '').trim();
+    if (!h) return null;
+    const u = String(updatedAt || '').trim();
+    if (!u) return `/media/product-image/${encodeURIComponent(h)}`;
+    return `/media/product-image/${encodeURIComponent(h)}?v=${encodeURIComponent(u)}`;
+}
+
+function getPaginationEl() {
+    return document.getElementById('unlinked-pagination');
+}
+
+function updateLoadMoreButton() {
+    const pag = getPaginationEl();
+    const btn = document.getElementById('load-more');
+    if (!pag || !btn) return;
+    const hasMore = pag.dataset.hasMore === '1';
+    btn.classList.toggle('hidden', !hasMore);
+}
+
+function getSelectedSources() {
+    const boxes = document.querySelectorAll('.source-checkbox:checked');
+    return Array.from(boxes).map(b => b.value);
+}
+
+function setAllSources(checked) {
+    document.querySelectorAll('.source-checkbox').forEach(cb => { cb.checked = checked; });
+}
+
+function applySourceFilters() {
+    const q = (document.getElementById('source-filter')?.value || '').trim().toLowerCase();
+    const showZero = !!document.getElementById('sources-show-zero')?.checked;
+    document.querySelectorAll('.source-row').forEach(row => {
+        const name = row.dataset.sourceName || '';
+        const isZero = row.dataset.zero === '1';
+        const matchText = !q || name.includes(q);
+        const matchZero = showZero || !isZero;
+        row.classList.toggle('hidden', !(matchText && matchZero));
+    });
+}
+
+async function refreshSourceCounts() {
+    try {
+        const resp = await fetch('/link/api/source-counts');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const rows = data?.sources || [];
+        const map = new Map(rows.map(r => [r.source, r]));
+
+        let total = 0;
+        for (const r of rows) total += Number(r.unlinked_total || 0);
+        const totalEl = document.getElementById('total-unlinked');
+        if (totalEl) totalEl.textContent = String(total);
+
+        document.querySelectorAll('.source-row').forEach(row => {
+            const source = row.dataset.source;
+            const next = map.get(source);
+            const countEl = row.querySelector('.source-count');
+            if (countEl) countEl.textContent = String(next?.unlinked_total ?? 0);
+            row.dataset.zero = String((next?.unlinked_total ?? 0) === 0 ? 1 : 0);
+        });
+        applySourceFilters();
+    } catch (e) {
+        console.warn('Failed to refresh source counts', e);
+    }
+}
+
+function setLoadedCount() {
+    const rows = document.querySelectorAll('.unlinked-row');
+    const el = document.getElementById('loaded-count');
+    if (el) el.textContent = String(rows.length);
+}
+
+async function loadUnlinked({ reset }) {
+    if (state.loadingUnlinked) return;
+    state.loadingUnlinked = true;
+    try {
+        const sources = getSelectedSources();
+        const q = (document.getElementById('product-search')?.value || '').trim();
+        state.query = q;
+
+        const offset = reset ? 0 : Number(getPaginationEl()?.dataset.nextOffset || 0);
+        const params = new URLSearchParams();
+        for (const s of sources) params.append('source', s);
+        if (q) params.set('q', q);
+        params.set('limit', String(state.limit));
+        params.set('offset', String(offset));
+
+        const resp = await fetch(`/link/api/unlinked?${params.toString()}`);
+        if (!resp.ok) throw new Error('Failed to load unlinked');
+        const html = await resp.text();
+
+        const container = document.getElementById('unlinked-container');
+        if (!container) return;
+
+        if (reset) {
+            container.innerHTML = html;
+        } else {
+            const temp = document.createElement('div');
+            temp.innerHTML = html;
+            const incoming = temp.querySelectorAll('.unlinked-row');
+            const incomingPagination = temp.querySelector('#unlinked-pagination');
+            incoming.forEach(n => container.appendChild(n));
+            const oldPag = container.querySelector('#unlinked-pagination');
+            if (oldPag) oldPag.remove();
+            if (incomingPagination) container.appendChild(incomingPagination);
+        }
+
+        updateLoadMoreButton();
+        setLoadedCount();
+        updateBulkBar();
+    } catch (e) {
+        console.error(e);
+        alert('Failed to load unlinked products.');
+    } finally {
+        state.loadingUnlinked = false;
+    }
+}
+
+function readRowData(row) {
+    return {
+        source: row.dataset.source || '',
+        source_item_id: row.dataset.itemId || '',
+        name: row.dataset.name || '',
+        url: row.dataset.url || '',
+        price: row.dataset.price || '',
+        currency: row.dataset.currency || '',
+        image_hash: row.dataset.imageHash || '',
+        image_updated_at: row.dataset.imageUpdatedAt || '',
+    };
+}
+
+function setActiveProduct(row) {
+    document.querySelectorAll('.unlinked-row').forEach(r => r.classList.remove('bg-white/5'));
+    row.classList.add('bg-white/5');
+
+    const product = readRowData(row);
+    state.selectedProduct = product;
+
+    const wrapper = document.getElementById('active-product');
+    wrapper?.classList.remove('hidden');
+
+    document.getElementById('active-name').textContent = product.name || '(Unnamed product)';
+    document.getElementById('active-source').textContent = product.source || '';
+    document.getElementById('active-sku').textContent = product.source_item_id ? `SKU: ${product.source_item_id}` : 'SKU missing';
+
+    const priceText = product.price ? `${Number(product.price).toFixed(2)} ${product.currency || ''}`.trim() : 'No price';
+    document.getElementById('active-price').textContent = priceText;
+
+    const link = document.getElementById('active-url');
+    if (link) {
+        if (product.url) {
+            link.href = product.url;
+            link.classList.remove('hidden');
+        } else {
+            link.classList.add('hidden');
+        }
+    }
+
+    const imgEl = document.getElementById('active-image');
+    const img = imageUrl(product.image_hash, product.image_updated_at);
+    imgEl.innerHTML = img
+        ? `<img src="${img}" alt="${escapeHtml(product.name)}" class="h-full w-full object-cover" loading="lazy" decoding="async">`
+        : `<div class="text-[10px] text-slate-400 text-center px-1 leading-tight">No image</div>`;
+
+    const missingId = !String(product.source_item_id || '').trim();
+    document.getElementById('missing-id-warning').classList.toggle('hidden', !missingId);
+    const ack = document.getElementById('missing-id-ack');
+    if (ack) ack.checked = !missingId;
+
+    const newName = document.getElementById('new-canonical-name');
+    if (newName && !newName.value.trim()) {
+        newName.value = product.name || '';
+    }
+
+    if (!document.getElementById('keep-canonical').checked) {
+        setSelectedCanonical(null);
+    }
+
+    loadProductSuggestions();
+    updateLinkButtonState();
+}
+
+function setSelectedCanonical(canonical) {
+    state.selectedCanonical = canonical;
+
+    const selected = document.getElementById('canonical-selected');
+    const input = document.getElementById('canonical-search');
+    if (canonical) {
+        selected.textContent = `Selected: ${canonical.name} (#${canonical.id})`;
+        selected.classList.remove('hidden');
+        if (input) input.value = canonical.name;
+    } else {
+        selected.classList.add('hidden');
+        if (input) input.value = '';
+    }
+    updateLinkButtonState();
+}
+
+function updateLinkButtonState() {
+    const btn = document.getElementById('link-btn');
+    const missingIdAck = document.getElementById('missing-id-ack');
+    const missingOk = !missingIdAck || missingIdAck.checked;
+    btn.disabled = !(state.selectedProduct && state.selectedCanonical && missingOk);
+}
+
+async function loadProductSuggestions() {
+    const list = document.getElementById('product-suggestions');
+    const empty = document.getElementById('product-suggestions-empty');
+    if (!list || !empty || !state.selectedProduct) return;
+    list.innerHTML = '';
+    empty.classList.add('hidden');
+
+    const p = state.selectedProduct;
+    const params = new URLSearchParams({ source: p.source, source_item_id: p.source_item_id || '' });
+    try {
+        const resp = await fetch(`/link/api/product-suggestions?${params.toString()}`);
+        if (!resp.ok) throw new Error('Failed');
+        const data = await resp.json();
+        const suggestions = data?.suggestions || [];
+        if (!suggestions.length) {
+            empty.classList.remove('hidden');
+            return;
+        }
+
+        list.innerHTML = suggestions.map(s => {
+            const img = imageUrl(s.canonical_image_hash, s.canonical_image_updated_at);
+            const reasons = (s.reasons || []).slice(0, 2).map(escapeHtml).join(' · ');
+            const score = Math.round((s.score || 0) * 100);
+            const imgHtml = img
+                ? `<img src="${img}" alt="${escapeHtml(s.canonical_name)}" class="h-full w-full object-cover" loading="lazy" decoding="async">`
+                : `<div class="text-[10px] text-slate-400 text-center px-1 leading-tight">No image</div>`;
+            return `
+                <button type="button" class="suggestion-btn w-full text-left p-3 rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] transition"
+                    data-canonical-id="${escapeHtml(s.canonical_id)}"
+                    data-canonical-name="${escapeHtml(s.canonical_name)}">
+                    <div class="flex items-center gap-3">
+                        <div class="h-10 w-10 rounded-md overflow-hidden border border-white/10 bg-white/5 flex items-center justify-center shrink-0">${imgHtml}</div>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-sm text-white truncate">${escapeHtml(s.canonical_name)}</p>
+                            <p class="text-xs text-slate-500 truncate">${reasons || 'Suggested match'}</p>
+                        </div>
+                        <div class="text-xs font-semibold text-slate-200 tabular-nums">${score}%</div>
+                    </div>
+                </button>
+            `;
+        }).join('');
+    } catch (e) {
+        console.warn('Failed to load per-product suggestions', e);
+        empty.classList.remove('hidden');
+    }
+}
+
+async function searchCanonicals(q, targetEl) {
+    const query = (q || '').trim();
+    if (!query) return [];
+    const params = new URLSearchParams({ q: query, limit: '20' });
+    const resp = await fetch(`/link/api/canonicals?${params.toString()}`);
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    return data?.results || [];
+}
+
+function renderCanonicalResults(container, results, onPick) {
+    if (!container) return;
+    if (!results.length) {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+        return;
+    }
+    container.classList.remove('hidden');
+    container.innerHTML = results.map(r => `
+        <button type="button" class="w-full text-left px-3 py-2 hover:bg-white/5 text-sm text-slate-200"
+            data-id="${escapeHtml(r.id)}" data-name="${escapeHtml(r.name)}">
+            ${escapeHtml(r.name)} <span class="text-xs text-slate-500">#${escapeHtml(r.id)}</span>
+        </button>
+    `).join('');
+    container.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = Number(btn.dataset.id);
+            const name = btn.dataset.name || '';
+            onPick({ id, name });
+            container.classList.add('hidden');
+        });
+    });
+}
+
+async function apiPostJson(url, payload) {
+    const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+        let detail = '';
+        try { detail = (await resp.json())?.detail || ''; } catch {}
+        throw new Error(detail || `Request failed (${resp.status})`);
+    }
+    return await resp.json();
+}
+
+function removeRowByKey(source, sourceItemId) {
+    const rows = document.querySelectorAll('.unlinked-row');
+    for (const r of rows) {
+        if ((r.dataset.source || '') === source && (r.dataset.itemId || '') === (sourceItemId || '')) {
+            r.remove();
+            return true;
+        }
+    }
+    return false;
+}
+
+function pickNextRow() {
+    const rows = Array.from(document.querySelectorAll('.unlinked-row'));
+    if (!rows.length) return null;
+    return rows[0];
+}
+
+async function linkSelectedProduct() {
+    const p = state.selectedProduct;
+    const c = state.selectedCanonical;
+    if (!p || !c) return;
+
+    const missingIdAck = document.getElementById('missing-id-ack');
+    if (missingIdAck && !missingIdAck.checked) {
+        alert('Please confirm the missing-ID warning first.');
+        return;
+    }
+
+    await apiPostJson('/link/api/link', {
+        canonical_id: c.id,
+        source: p.source,
+        source_item_id: p.source_item_id || '',
+    });
+
+    removeRowByKey(p.source, p.source_item_id || '');
+    setLoadedCount();
+    updateBulkBar();
+    refreshSourceCounts();
+
+    if (document.getElementById('auto-advance').checked) {
+        const next = pickNextRow();
+        if (next) setActiveProduct(next);
+        else await loadUnlinked({ reset: true });
+    } else {
+        state.selectedProduct = null;
+    }
+}
+
+async function createAndLinkSelectedProduct() {
+    const p = state.selectedProduct;
+    if (!p) return;
+    const name = (document.getElementById('new-canonical-name')?.value || '').trim();
+    if (!name) {
+        alert('Please enter a canonical product name.');
+        return;
+    }
+
+    const missingIdAck = document.getElementById('missing-id-ack');
+    if (missingIdAck && !missingIdAck.checked) {
+        alert('Please confirm the missing-ID warning first.');
+        return;
+    }
+
+    const res = await apiPostJson('/link/api/link-new', {
+        name,
+        source: p.source,
+        source_item_id: p.source_item_id || '',
+    });
+
+    if (res?.canonical_id && document.getElementById('keep-canonical').checked) {
+        setSelectedCanonical({ id: Number(res.canonical_id), name: res.canonical_name || name });
+    }
+
+    removeRowByKey(p.source, p.source_item_id || '');
+    setLoadedCount();
+    updateBulkBar();
+    refreshSourceCounts();
+
+    if (document.getElementById('auto-advance').checked) {
+        const next = pickNextRow();
+        if (next) setActiveProduct(next);
+        else await loadUnlinked({ reset: true });
+    }
+}
+
+function updateBulkBar() {
+    const checked = document.querySelectorAll('.unlinked-checkbox:checked');
+    const bar = document.getElementById('bulk-bar');
+    const countEl = document.getElementById('bulk-count');
+    if (countEl) countEl.textContent = String(checked.length);
+    bar.classList.toggle('hidden', checked.length === 0);
+}
+
+function getBulkSelection() {
+    const checked = document.querySelectorAll('.unlinked-checkbox:checked');
+    return Array.from(checked).map(cb => ({
+        source: cb.dataset.source || '',
+        source_item_id: cb.dataset.itemId || '',
+    }));
+}
+
+async function runBulkLink(canonical) {
+    const items = getBulkSelection();
+    if (!items.length) return;
+    if (!canonical?.id) {
+        alert('Select a canonical product for bulk link.');
+        return;
+    }
+
+    const missing = items.filter(it => !String(it.source_item_id || '').trim());
+    if (missing.length) {
+        const ok = confirm(`${missing.length} selected items are missing a stable SKU/ID. Linking them may incorrectly link other “missing ID” items from the same source. Continue?`);
+        if (!ok) return;
+    }
+
+    await apiPostJson('/link/api/bulk-link', {
+        canonical_id: canonical.id,
+        items,
+    });
+
+    for (const it of items) {
+        removeRowByKey(it.source, it.source_item_id);
+    }
+    setLoadedCount();
+    updateBulkBar();
+    refreshSourceCounts();
+}
+
+// Suggestions (bulk)
+function suggestionKey(match) {
+    return `${match?.source || ''}::${match?.source_item_id || ''}`;
+}
+
+function renderSuggestionItem(suggestion, index) {
+    const canonicalName = escapeHtml(suggestion?.canonical_name || 'Unknown canonical');
+    const score = Math.round((suggestion?.score || 0) * 100);
+    const reasons = (suggestion?.reasons || []).slice(0, 3).map(escapeHtml).join(' · ');
+    const createNew = !!suggestion?.create_new || !suggestion?.canonical_id;
+
+    const canonicalImg = imageUrl(suggestion?.canonical_image_hash, suggestion?.canonical_image_updated_at);
+    const canonicalImageHtml = canonicalImg
+        ? `<img src="${canonicalImg}" alt="${canonicalName}" class="h-full w-full object-cover" loading="lazy" decoding="async">`
+        : `<div class="text-[10px] text-slate-400 text-center px-1 leading-tight">No image</div>`;
+
+    const matches = (suggestion?.matches || []).filter(m => !state.dismissedSuggestionKeys.has(suggestionKey(m)));
+    const matchRows = matches.slice(0, 8).map(m => {
+        const k = suggestionKey(m);
+        const img = imageUrl(m.product_image_hash, m.product_image_updated_at);
+        const imgHtml = img
+            ? `<img src="${img}" alt="${escapeHtml(m.product_name)}" class="h-full w-full object-cover" loading="lazy" decoding="async">`
+            : `<div class="text-[10px] text-slate-400 text-center px-1 leading-tight">No image</div>`;
+        const mScore = Math.round((m.score || 0) * 100);
+        return `
+            <label class="flex items-center gap-3 p-2 rounded-lg bg-white/[0.03] border border-white/10">
+                <input type="checkbox" class="suggestion-match h-4 w-4 text-brand focus:ring-brand/60 border-white/20 bg-white/5 rounded" checked
+                    data-source="${escapeHtml(m.source)}"
+                    data-item-id="${escapeHtml(m.source_item_id || '')}">
+                <div class="h-10 w-10 rounded-md overflow-hidden border border-white/10 bg-white/5 flex items-center justify-center shrink-0">${imgHtml}</div>
+                <div class="min-w-0 flex-1">
+                    <p class="text-xs text-slate-400 truncate">${escapeHtml(m.source)}${m.source_item_id ? ` · SKU: ${escapeHtml(m.source_item_id)}` : ''}</p>
+                    <p class="text-sm text-white truncate">${escapeHtml(m.product_name || '')}</p>
+                </div>
+                <div class="text-xs font-semibold text-slate-200 tabular-nums">${mScore}%</div>
+            </label>
+        `;
+    }).join('');
+
+    const actionLabel = createNew ? 'Create canonical & link' : 'Link selected';
+    const canonicalIdAttr = suggestion?.canonical_id ? `data-canonical-id="${escapeHtml(suggestion.canonical_id)}"` : '';
+
+    return `
+        <div class="p-4 rounded-xl border border-white/10 bg-white/[0.02]">
+            <div class="flex items-start gap-3">
+                <div class="h-12 w-12 rounded-md overflow-hidden border border-white/10 bg-white/5 flex items-center justify-center shrink-0">${canonicalImageHtml}</div>
+                <div class="min-w-0 flex-1">
+                    <p class="text-sm font-semibold text-white">${canonicalName}</p>
+                    <p class="text-xs text-slate-500 mt-0.5 truncate">${reasons || ''}</p>
+                </div>
+                <div class="text-xs font-semibold text-slate-200 tabular-nums">${score}%</div>
+            </div>
+            <div class="mt-3 space-y-2">${matchRows || '<p class=\"text-xs text-slate-500\">No matches to apply.</p>'}</div>
+            <div class="mt-3 flex items-center justify-between gap-3">
+                <button type="button" class="app-btn-secondary text-xs px-3 py-2 rounded-md border border-white/10 suggestion-dismiss" data-index="${index}">Dismiss</button>
+                <button type="button" class="app-btn text-xs px-3 py-2 rounded-md suggestion-apply" data-index="${index}" ${canonicalIdAttr}>${actionLabel}</button>
+            </div>
+        </div>
+    `;
+}
+
+function renderSuggestionList() {
+    const listEl = document.getElementById('suggestion-list');
+    const emptyEl = document.getElementById('suggestion-empty');
+    const loadingEl = document.getElementById('suggestion-loading');
+    if (!listEl || !emptyEl || !loadingEl) return;
+
+    if (state.loadingSuggestions) {
+        loadingEl.classList.remove('hidden');
+        emptyEl.classList.add('hidden');
+        listEl.classList.add('hidden');
+        listEl.innerHTML = '';
+        return;
+    }
+
+    if (!state.suggestionQueue || state.suggestionQueue.length === 0) {
+        loadingEl.classList.add('hidden');
+        listEl.classList.add('hidden');
+        emptyEl.classList.remove('hidden');
+        listEl.innerHTML = '';
+        return;
+    }
+
+    loadingEl.classList.add('hidden');
+    emptyEl.classList.add('hidden');
+    listEl.classList.remove('hidden');
+    listEl.innerHTML = state.suggestionQueue.map((s, i) => renderSuggestionItem(s, i)).join('');
+}
+
+async function loadSuggestions(force) {
+    if (state.loadingSuggestions) return;
+    state.loadingSuggestions = true;
+    state.suggestionQueue = [];
+    renderSuggestionList();
+
+    const params = new URLSearchParams();
+    state.dismissedSuggestionKeys.forEach(k => params.append('exclude', k));
+    const url = params.toString() ? `/link/suggestions?${params.toString()}` : '/link/suggestions';
+
+    try {
+        const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+        if (!resp.ok) throw new Error('Failed');
+        const data = await resp.json();
+        state.suggestionQueue = data?.suggestions || [];
+    } catch (e) {
+        console.warn('Failed to load suggestions', e);
+        state.suggestionQueue = [];
+    } finally {
+        state.loadingSuggestions = false;
+        renderSuggestionList();
+    }
+}
+
+async function applySuggestionAt(index, explicitCanonicalId) {
+    const suggestion = state.suggestionQueue?.[index];
+    if (!suggestion) return;
+
+    const container = document.getElementById('suggestion-list');
+    const root = container?.children?.[index];
+    const checks = root ? root.querySelectorAll('.suggestion-match:checked') : [];
+    const items = Array.from(checks).map(cb => ({ source: cb.dataset.source, source_item_id: cb.dataset.itemId || '' }));
+    if (!items.length) return;
+
+    const missing = items.filter(it => !String(it.source_item_id || '').trim());
+    if (missing.length) {
+        const ok = confirm(`${missing.length} selected items are missing a stable SKU/ID. Linking them may incorrectly link other “missing ID” items from the same source. Continue?`);
+        if (!ok) return;
+    }
+
+    let canonicalId = explicitCanonicalId ? Number(explicitCanonicalId) : Number(suggestion.canonical_id || 0);
+    if (!canonicalId) {
+        const first = items[0];
+        const res = await apiPostJson('/link/api/link-new', { name: suggestion.canonical_name, source: first.source, source_item_id: first.source_item_id || '' });
+        canonicalId = Number(res?.canonical_id || 0);
+        items.shift();
+    }
+
+    if (items.length) {
+        await apiPostJson('/link/api/bulk-link', { canonical_id: canonicalId, items });
+    }
+
+    await loadUnlinked({ reset: true });
+    refreshSourceCounts();
+    await loadSuggestions(true);
+}
+
+function wireEvents() {
+    // Initial selected sources = all checked.
+    document.querySelectorAll('.source-checkbox:checked').forEach(cb => state.selectedSources.add(cb.value));
+
+    updateLoadMoreButton();
+    setLoadedCount();
+
+    document.getElementById('sources-select-all')?.addEventListener('click', async () => {
+        setAllSources(true);
+        await loadUnlinked({ reset: true });
+    });
+    document.getElementById('sources-select-none')?.addEventListener('click', async () => {
+        setAllSources(false);
+        await loadUnlinked({ reset: true });
+    });
+
+    document.getElementById('source-filter')?.addEventListener('input', applySourceFilters);
+    document.getElementById('sources-show-zero')?.addEventListener('change', applySourceFilters);
+
+    document.querySelectorAll('.source-checkbox').forEach(cb => {
+        cb.addEventListener('change', () => loadUnlinked({ reset: true }));
+    });
+
+    document.getElementById('refresh-unlinked')?.addEventListener('click', () => loadUnlinked({ reset: true }));
+    document.getElementById('load-more')?.addEventListener('click', () => loadUnlinked({ reset: false }));
+    document.getElementById('product-search')?.addEventListener('input', debounce(() => loadUnlinked({ reset: true }), 250));
+
+    document.getElementById('unlinked-container')?.addEventListener('click', (e) => {
+        const target = e.target;
+        if (target?.closest?.('[data-stop-row-click=\"1\"]')) return;
+        if (target?.classList?.contains?.('unlinked-checkbox')) return;
+        const row = target?.closest?.('.unlinked-row');
+        if (row) setActiveProduct(row);
+    });
+
+    document.getElementById('unlinked-container')?.addEventListener('change', (e) => {
+        if (e.target?.classList?.contains?.('unlinked-checkbox')) updateBulkBar();
+    });
+
+    document.getElementById('bulk-clear')?.addEventListener('click', () => {
+        document.querySelectorAll('.unlinked-checkbox:checked').forEach(cb => cb.checked = false);
+        updateBulkBar();
+    });
+
+    // Canonical search (single)
+    const canonicalInput = document.getElementById('canonical-search');
+    const canonicalResults = document.getElementById('canonical-results');
+    canonicalInput?.addEventListener('input', debounce(async () => {
+        const results = await searchCanonicals(canonicalInput.value, canonicalResults);
+        renderCanonicalResults(canonicalResults, results, setSelectedCanonical);
+    }, 200));
+
+    // Canonical search (bulk)
+    const bulkInput = document.getElementById('bulk-canonical-search');
+    const bulkResults = document.getElementById('bulk-canonical-results');
+    let bulkCanonical = null;
+    bulkInput?.addEventListener('input', debounce(async () => {
+        const results = await searchCanonicals(bulkInput.value, bulkResults);
+        renderCanonicalResults(bulkResults, results, (c) => { bulkCanonical = c; bulkInput.value = c.name; });
+    }, 200));
+
+    document.getElementById('bulk-link')?.addEventListener('click', () => runBulkLink(bulkCanonical));
+
+    document.getElementById('missing-id-ack')?.addEventListener('change', updateLinkButtonState);
+    document.getElementById('link-btn')?.addEventListener('click', () => linkSelectedProduct());
+    document.getElementById('create-link-btn')?.addEventListener('click', () => createAndLinkSelectedProduct());
+    document.getElementById('refresh-product-suggestions')?.addEventListener('click', () => loadProductSuggestions());
+
+    document.getElementById('product-suggestions')?.addEventListener('click', (e) => {
+        const btn = e.target?.closest?.('.suggestion-btn');
+        if (!btn) return;
+        const id = Number(btn.dataset.canonicalId);
+        const name = btn.dataset.canonicalName || '';
+        setSelectedCanonical({ id, name });
+        document.getElementById('canonical-results')?.classList?.add('hidden');
+    });
+
+    // Suggestions (bulk)
+    document.getElementById('suggestions-refresh')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        loadSuggestions(true);
+    });
+
+    document.getElementById('suggestion-list')?.addEventListener('click', async (e) => {
+        const dismissBtn = e.target?.closest?.('.suggestion-dismiss');
+        const applyBtn = e.target?.closest?.('.suggestion-apply');
+        if (dismissBtn) {
+            const idx = Number(dismissBtn.dataset.index);
+            const suggestion = state.suggestionQueue?.[idx];
+            if (suggestion?.matches) {
+                suggestion.matches.forEach(m => state.dismissedSuggestionKeys.add(suggestionKey(m)));
+            }
+            await loadSuggestions(true);
+            return;
+        }
+        if (applyBtn) {
+            const idx = Number(applyBtn.dataset.index);
+            const canonicalId = applyBtn.dataset.canonicalId;
+            try {
+                await applySuggestionAt(idx, canonicalId);
+            } catch (err) {
+                console.error(err);
+                alert('Failed to apply suggestion.');
+            }
+        }
+    });
+
+    // Keyboard: Enter = link, j/k optional later.
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            if (!document.getElementById('link-btn')?.disabled) linkSelectedProduct();
+        }
+    });
+
+    // Lazy-load suggestions when expanded.
+    document.getElementById('suggestions-details')?.addEventListener('toggle', (e) => {
+        if (e.target?.open) loadSuggestions(true);
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    wireEvents();
+    updateLoadMoreButton();
+    refreshSourceCounts();
+    applySourceFilters();
+});
+</script>
+{% endblock %}

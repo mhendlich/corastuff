@@ -1,0 +1,82 @@
+{% for product in products %}
+<div
+    class="unlinked-row px-4 py-3 hover:bg-white/5 app-card-hover border-b border-white/5 focus:outline-none focus:ring-2 focus:ring-brand/50"
+    tabindex="0"
+    data-source="{{ product.source }}"
+    data-item-id="{{ product.item_id or '' }}"
+    data-name="{{ product.name | e }}"
+    data-url="{{ product.url or '' }}"
+    data-price="{{ product.price if product.price is not none else '' }}"
+    data-currency="{{ product.currency or '' }}"
+    data-image-hash="{{ product.image_hash or '' }}"
+    data-image-updated-at="{{ product.image_updated_at or '' }}"
+>
+    <div class="flex items-start gap-3">
+        <div class="flex-shrink-0 pt-1">
+            <input
+                type="checkbox"
+                class="unlinked-checkbox h-4 w-4 text-brand focus:ring-brand/60 border-white/20 bg-white/5 rounded"
+                data-source="{{ product.source }}"
+                data-item-id="{{ product.item_id or '' }}"
+            >
+        </div>
+
+        <div class="flex-shrink-0 mt-0.5">
+            {% set img_src = None %}
+            {% if product.image_hash %}
+                {% set img_src = '/media/product-image/' ~ product.image_hash %}
+                {% if product.image_updated_at %}
+                    {% set img_src = img_src ~ '?v=' ~ product.image_updated_at|urlencode %}
+                {% endif %}
+            {% endif %}
+            <div class="h-12 w-12 rounded-md overflow-hidden border border-white/10 bg-white/5 flex items-center justify-center">
+                {% if img_src %}
+                <img src="{{ img_src }}" alt="{{ product.name }}" class="h-full w-full object-cover" loading="lazy" decoding="async">
+                {% else %}
+                <div class="text-[10px] text-slate-400 text-center px-1 leading-tight">No image</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="flex-1 min-w-0">
+            <div class="flex justify-between items-start gap-2">
+                <div class="min-w-0">
+                    <p class="text-sm font-medium text-white truncate" title="{{ product.name }}">{{ product.name }}</p>
+                    <p class="text-xs text-slate-400 truncate">
+                        <span class="font-semibold text-slate-300">{{ product.source }}</span>
+                        <span class="text-slate-600">·</span>
+                        {% if product.item_id %}
+                        <span>SKU: {{ product.item_id }}</span>
+                        {% else %}
+                        <span class="text-amber-300/90">SKU missing</span>
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="flex-shrink-0 text-right">
+                    {% if product.price is not none %}
+                    <span class="text-sm font-medium text-emerald-300">{{ "%.2f"|format(product.price) }} {{ product.currency or '' }}</span>
+                    {% else %}
+                    <span class="text-sm text-slate-500">No price</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% if product.url %}
+            <a
+                href="{{ product.url }}"
+                target="_blank"
+                rel="noreferrer"
+                class="text-xs text-brand-cyan hover:text-white mt-1 inline-block"
+                data-stop-row-click="1"
+            >View source</a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="px-4 py-10 text-center text-sm text-slate-400">
+    No unlinked products found for this filter.
+</div>
+{% endfor %}
+
+<div id="unlinked-pagination" data-next-offset="{{ next_offset }}" data-has-more="{{ 1 if has_more else 0 }}"></div>
+

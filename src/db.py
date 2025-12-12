@@ -649,10 +649,20 @@ class ProductDatabase:
             )
             return [dict(row) for row in cursor.fetchall()]
 
-    def get_unlinked_products_by_keys(self, keys: list[tuple[str, str]]) -> list[dict]:
+    def get_unlinked_products_by_keys(
+        self,
+        keys: list[tuple[str, str]],
+        include_images: bool = False,
+    ) -> list[dict]:
         """Fetch specific unlinked products by (source, source_item_id) (latest scrape only)."""
         if not keys:
             return []
+
+        image_select = (
+            ", pi.image_data, pi.image_mime, pi.image_hash, pi.updated_at as image_updated_at"
+            if include_images
+            else ", pi.image_hash, pi.image_mime, pi.updated_at as image_updated_at"
+        )
 
         where_parts: list[str] = []
         params: list[object] = []
@@ -676,7 +686,7 @@ class ProductDatabase:
                     FROM products
                     GROUP BY source
                 )
-                SELECT p.*, pi.image_hash, pi.image_mime, pi.updated_at as image_updated_at
+                SELECT p.*{image_select}
                 FROM products p
                 JOIN latest l ON l.source = p.source AND l.scraped_at = p.scraped_at
                 LEFT JOIN product_links pl
@@ -691,10 +701,69 @@ class ProductDatabase:
                 WHERE pl.id IS NULL
                 AND ({where_clause})
                 ORDER BY p.source, p.name
-                """.format(where_clause=where_clause),
+                """.format(image_select=image_select, where_clause=where_clause),
                 params,
             )
             return [dict(row) for row in cursor.fetchall()]
+
+    def get_canonical_suggestions_for_unlinked_product(
+        self,
+        source: str,
+        source_item_id: str,
+        limit: int = 6,
+        min_score: float = 0.35,
+    ) -> list[dict]:
+        """Suggest canonical products for a specific unlinked product."""
+        limit_n = max(1, min(int(limit), 25))
+
+        products = self.get_unlinked_products_by_keys(
+            [(source, source_item_id)],
+            include_images=True,
+        )
+        if not products:
+            return []
+        product = products[0]
+
+        canonical_products = self.get_all_canonical_products()
+        if not canonical_products:
+            return []
+
+        canonical_assets = self._build_canonical_asset_index(canonical_products)
+        product_features = self._extract_product_features(product)
+
+        suggestions: list[dict] = []
+        for canonical in canonical_products:
+            assets = canonical_assets.get(
+                canonical["id"],
+                {"linked_names": set(), "item_ids": set(), "images": []},
+            )
+            score, reasons, details = self._score_match(
+                product, product_features, canonical, assets
+            )
+            if score <= min_score:
+                continue
+
+            canonical_image_hash = None
+            canonical_image_updated_at = None
+            if assets.get("images"):
+                canonical_image_hash = assets["images"][0].get("hash")
+                canonical_image_updated_at = assets["images"][0].get("updated_at")
+
+            suggestions.append(
+                {
+                    "canonical_id": canonical["id"],
+                    "canonical_name": canonical.get("name"),
+                    "score": round(float(score), 4),
+                    "reasons": reasons,
+                    "matched_name": details.get("matched_name"),
+                    "canonical_image_hash": canonical_image_hash,
+                    "canonical_image_updated_at": canonical_image_updated_at,
+                    "linked_names": sorted(list(assets.get("linked_names", [])))[:3],
+                }
+            )
+
+        suggestions.sort(key=lambda s: s.get("score") or 0.0, reverse=True)
+        return suggestions[:limit_n]
 
     def search_canonical_products(self, query: str, limit: int = 20) -> list[dict]:
         """Search canonical products by name."""
@@ -913,7 +982,7 @@ class ProductDatabase:
     def get_link_suggestions(self, limit: int = 15, exclude_keys: list[str] | None = None) -> list[dict]:
         """Return high-confidence canonical matches for unlinked products."""
         exclude_set = {key for key in (exclude_keys or []) if key}
-        unlinked = self.get_unlinked_products()
+        unlinked = self.get_unlinked_products(include_images=False)
         canonical_products = self.get_all_canonical_products()
 
         matches: list[dict] = []
@@ -950,14 +1019,11 @@ class ProductDatabase:
                         continue
 
                     if not best_match or score > best_match["score"]:
-                        canonical_image = None
-                        canonical_image_mime = None
-                        if details.get("image_bytes"):
-                            canonical_image = details["image_bytes"]
-                            canonical_image_mime = details.get("image_mime")
-                        elif assets.get("images"):
-                            canonical_image = assets["images"][0].get("data")
-                            canonical_image_mime = assets["images"][0].get("mime")
+                        canonical_image_hash = None
+                        canonical_image_updated_at = None
+                        if assets.get("images"):
+                            canonical_image_hash = assets["images"][0].get("hash")
+                            canonical_image_updated_at = assets["images"][0].get("updated_at")
 
                         best_match = {
                             "source": product["source"],
@@ -966,15 +1032,15 @@ class ProductDatabase:
                             "product_price": product.get("price"),
                             "product_currency": product.get("currency"),
                             "product_url": product.get("url"),
-                            "product_image": product.get("image_data"),
-                            "product_image_mime": product.get("image_mime"),
+                            "product_image_hash": product.get("image_hash"),
+                            "product_image_updated_at": product.get("image_updated_at"),
                             "canonical_id": canonical["id"],
                             "canonical_name": canonical["name"],
                             "score": round(score, 4),
                             "reasons": reasons,
                             "matched_name": details.get("matched_name"),
-                            "canonical_image": canonical_image,
-                            "canonical_image_mime": canonical_image_mime,
+                            "canonical_image_hash": canonical_image_hash,
+                            "canonical_image_updated_at": canonical_image_updated_at,
                             "linked_names": sorted(list(assets.get("linked_names", [])))[:3],
                         }
 
@@ -1000,8 +1066,8 @@ class ProductDatabase:
                 group = {
                     "canonical_id": canonical_id,
                     "canonical_name": match.get("canonical_name"),
-                    "canonical_image": match.get("canonical_image"),
-                    "canonical_image_mime": match.get("canonical_image_mime"),
+                    "canonical_image_hash": match.get("canonical_image_hash"),
+                    "canonical_image_updated_at": match.get("canonical_image_updated_at"),
                     "linked_names": match.get("linked_names") or [],
                     "reasons": match.get("reasons") or [],
                     "matched_name": match.get("matched_name"),
@@ -1023,8 +1089,8 @@ class ProductDatabase:
                 group["score"] = match.get("score") or 0.0
                 group["reasons"] = match.get("reasons") or []
                 group["matched_name"] = match.get("matched_name")
-                group["canonical_image"] = match.get("canonical_image")
-                group["canonical_image_mime"] = match.get("canonical_image_mime")
+                group["canonical_image_hash"] = match.get("canonical_image_hash")
+                group["canonical_image_updated_at"] = match.get("canonical_image_updated_at")
                 if match.get("linked_names"):
                     group["linked_names"] = match.get("linked_names") or group["linked_names"]
             if match.get("create_new"):
@@ -1082,10 +1148,10 @@ class ProductDatabase:
                 "item_ids": {str(seed.get("item_id"))} if seed.get("item_id") else set(),
                 "images": [],
             }
-            if seed.get("image_data"):
+            if seed.get("image_hash") or seed.get("image_data"):
                 seed_assets["images"].append(
                     {
-                        "hash": seed.get("image_hash"),
+                        "hash": seed.get("image_hash") or seed_features.get("image_hash"),
                         "avg_hash": seed_features.get("avg_hash"),
                         "data": seed.get("image_data"),
                         "mime": seed.get("image_mime"),
@@ -1133,15 +1199,6 @@ class ProductDatabase:
                 continue
 
             canonical_name = best_seed.get("name")
-            canonical_image = None
-            canonical_image_mime = None
-            if best_details and best_details.get("image_bytes"):
-                canonical_image = best_details["image_bytes"]
-                canonical_image_mime = best_details.get("image_mime")
-            elif best_seed.get("image_data"):
-                canonical_image = best_seed.get("image_data")
-                canonical_image_mime = best_seed.get("image_mime")
-
             reasons = list(best_reasons)
             reasons.append("Creates new canonical on approval")
 
@@ -1153,15 +1210,15 @@ class ProductDatabase:
                     "product_price": product.get("price"),
                     "product_currency": product.get("currency"),
                     "product_url": product.get("url"),
-                    "product_image": product.get("image_data"),
-                    "product_image_mime": product.get("image_mime"),
+                    "product_image_hash": product.get("image_hash"),
+                    "product_image_updated_at": product.get("image_updated_at"),
                     "canonical_id": None,
                     "canonical_name": canonical_name,
                     "score": round(float(best_match), 4),
                     "reasons": reasons,
                     "matched_name": best_details.get("matched_name") if best_details else None,
-                    "canonical_image": canonical_image,
-                    "canonical_image_mime": canonical_image_mime,
+                    "canonical_image_hash": best_seed.get("image_hash"),
+                    "canonical_image_updated_at": best_seed.get("image_updated_at"),
                     "linked_names": [],
                     "create_new": True,
                     "seed_source": seed_source,
@@ -1292,7 +1349,7 @@ class ProductDatabase:
                 """
                 SELECT cp.id as canonical_id, cp.name as canonical_name,
                        p.name as linked_name, p.item_id,
-                       pi.image_data, pi.image_mime, pi.image_hash
+                       pi.image_data, pi.image_mime, pi.image_hash, pi.updated_at as image_updated_at
                 FROM canonical_products cp
                 JOIN product_links pl ON cp.id = pl.canonical_id
                 LEFT JOIN (
@@ -1320,13 +1377,16 @@ class ProductDatabase:
                     entry["linked_names"].add(row["linked_name"])
                 if row["item_id"]:
                     entry["item_ids"].add(str(row["item_id"]))
-                if row["image_data"]:
+                if row["image_hash"] or row["image_data"]:
                     entry["images"].append(
                         {
                             "hash": row["image_hash"],
-                            "avg_hash": self._average_hash_for_similarity(row["image_data"]),
+                            "avg_hash": self._average_hash_for_similarity(row["image_data"])
+                            if row["image_data"]
+                            else None,
                             "data": row["image_data"],
                             "mime": row["image_mime"],
+                            "updated_at": row["image_updated_at"],
                         }
                     )
 
