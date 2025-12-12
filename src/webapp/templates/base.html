@@ -153,6 +153,11 @@
                     if (serverId === null) {
                         serverId = e.data;
                     } else if (serverId !== e.data) {
+                        if (window.__disableDevAutoReload) {
+                            console.log('Server restarted (auto-reload disabled for this page).');
+                            serverId = e.data;
+                            return;
+                        }
                         console.log('Server restarted, refreshing...');
                         location.reload();
                     }

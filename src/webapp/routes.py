@@ -2,10 +2,15 @@
 
 import asyncio
 import base64
+import os
 import re
+import signal
+import subprocess
+import sys
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
@@ -13,6 +18,21 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response, Streamin
 from ..scrapers import get_scraper, get_scraper_display_name, list_scrapers
 from ..scheduler import get_scheduler, init_scheduler
 from ..job_queue import JobQueue
+from ..scraper_builder import (
+    generate_job_id,
+    get_current_job_id,
+    init_job,
+    is_pid_running,
+    job_dir,
+    log_path,
+    read_job_meta,
+    read_job_status,
+    read_lock,
+    read_log_tail,
+    release_lock,
+    try_acquire_lock,
+    write_job_status,
+)
 from .auth import (
     SERVER_ID,
     create_session,
@@ -23,6 +43,9 @@ from .auth import (
 )
 
 router = APIRouter()
+
+
+SCRAPER_BUILDER_SUBMIT_PASSWORD = "michi"
 
 class ScraperStatus(Enum):
     IDLE = "idle"
@@ -40,6 +63,46 @@ def get_db(request: Request):
 def templates(request: Request):
     """Get templates instance from app state."""
     return request.app.state.templates
+
+
+def _normalize_target_url(url: str) -> str:
+    parsed = urlparse((url or "").strip())
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="URL must be http(s) and include a hostname")
+    parsed = parsed._replace(fragment="")
+    return urlunparse(parsed)
+
+
+def _validate_scraper_builder_job_id(job_id: str) -> str:
+    if not re.fullmatch(r"\d+-[0-9a-f]{8}", job_id):
+        raise HTTPException(status_code=400, detail="Invalid job_id")
+    return job_id
+
+
+def _scraper_builder_current_payload() -> dict:
+    job_id = get_current_job_id()
+    if not job_id:
+        lock = read_lock()
+        return {
+            "running": bool(lock),
+            "job": None,
+            "log": {"text": "", "start_offset": 0, "file_size": 0},
+        }
+
+    meta = read_job_meta(job_id) or {"job_id": job_id}
+    status = read_job_status(job_id) or {"job_id": job_id, "state": "unknown"}
+    pid = status.get("pid")
+    if isinstance(pid, int) and status.get("state") == "running":
+        status["pid_running"] = is_pid_running(pid)
+        if not status["pid_running"]:
+            status["state"] = "failed"
+            status.setdefault("error", "Runner process is not running")
+            write_job_status(job_id, status)
+            release_lock(job_id)
+
+    log = read_log_tail(job_id)
+    running = status.get("state") == "running"
+    return {"running": running, "job": {**meta, **status}, "log": log}
 
 
 # --- Authentication ---
@@ -165,6 +228,165 @@ async def live_reload_stream():
             if current_mtime != last_mtime:
                 last_mtime = current_mtime
                 yield f"data: {SERVER_ID}:{current_mtime}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# --- Scraper Builder (Codex) ---
+
+
+@router.get("/api/scraper-builder/status")
+async def scraper_builder_status(_: str = Depends(require_auth)):
+    return _scraper_builder_current_payload()
+
+
+@router.post("/api/scraper-builder/start")
+async def scraper_builder_start(
+    url: str = Form(...),
+    password: str = Form(...),
+    _: str = Depends(require_auth),
+):
+    if password != SCRAPER_BUILDER_SUBMIT_PASSWORD:
+        raise HTTPException(status_code=403, detail="Invalid password")
+
+    normalized_url = _normalize_target_url(url)
+
+    # Clear stale locks.
+    lock = read_lock()
+    if lock and isinstance(lock.get("job_id"), str):
+        locked_job_id = lock["job_id"]
+        locked_status = read_job_status(locked_job_id) or {}
+        locked_pid = locked_status.get("pid")
+        locked_state = locked_status.get("state")
+        if locked_state in ("success", "failed", "canceled"):
+            release_lock(locked_job_id)
+        elif isinstance(locked_pid, int) and not is_pid_running(locked_pid):
+            write_job_status(
+                locked_job_id,
+                {"state": "failed", "phase": "stale-lock", "error": "Runner process is not running"},
+            )
+            release_lock(locked_job_id)
+
+    if read_lock():
+        raise HTTPException(status_code=409, detail="A scraper-building agent is already running")
+
+    job_id = generate_job_id()
+    if not try_acquire_lock(job_id):
+        raise HTTPException(status_code=409, detail="A scraper-building agent is already running")
+
+    init_job(job_id, normalized_url)
+    write_job_status(
+        job_id,
+        {
+            "state": "running",
+            "phase": "spawn",
+            "url": normalized_url,
+            "started_at": datetime.utcnow().isoformat() + "Z",
+        },
+    )
+
+    log_file = log_path(job_id)
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    log_fp = log_file.open("ab")
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "src.scraper_builder_runner", "--job-id", job_id, "--url", normalized_url],
+            cwd=Path(__file__).resolve().parent.parent.parent,
+            start_new_session=True,
+            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"},
+            stdout=log_fp,
+            stderr=subprocess.STDOUT,
+        )
+    except Exception:
+        log_fp.close()
+        release_lock(job_id)
+        write_job_status(job_id, {"state": "failed", "phase": "spawn", "error": "Failed to start runner"})
+        raise
+
+    log_fp.close()
+    write_job_status(job_id, {"pid": proc.pid, "phase": "running"})
+    return {"job_id": job_id}
+
+
+@router.post("/api/scraper-builder/cancel")
+async def scraper_builder_cancel(_: str = Depends(require_auth)):
+    payload = _scraper_builder_current_payload()
+    job = payload.get("job") or {}
+    job_id = job.get("job_id")
+    pid = job.get("pid")
+    if not isinstance(job_id, str) or not isinstance(pid, int):
+        raise HTTPException(status_code=404, detail="No running job found")
+    if not is_pid_running(pid):
+        write_job_status(job_id, {"state": "failed", "phase": "cancel", "error": "Runner process is not running"})
+        release_lock(job_id)
+        return {"ok": False}
+
+    try:
+        os.killpg(pid, signal.SIGTERM)
+    except Exception:
+        os.kill(pid, signal.SIGTERM)
+
+    write_job_status(job_id, {"state": "canceled", "phase": "cancel-requested"})
+    return {"ok": True}
+
+
+@router.get("/api/scraper-builder/stream")
+async def scraper_builder_stream(
+    request: Request,
+    job_id: str | None = Query(default=None),
+    offset: int = Query(default=0, ge=0),
+    _: str = Depends(require_auth),
+):
+    resolved_job_id = _validate_scraper_builder_job_id(job_id) if job_id else get_current_job_id()
+    if not resolved_job_id:
+        raise HTTPException(status_code=404, detail="No job found")
+
+    lf = log_path(resolved_job_id)
+    if not job_dir(resolved_job_id).exists():
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    import base64 as _b64
+    import json as _json
+
+    async def event_stream():
+        nonlocal offset
+
+        for _ in range(40):
+            if lf.exists():
+                break
+            await asyncio.sleep(0.25)
+
+        while True:
+            if await request.is_disconnected():
+                return
+
+            status = read_job_status(resolved_job_id) or {}
+            state = status.get("state", "unknown")
+            done = state in ("success", "failed", "canceled")
+
+            if lf.exists():
+                with lf.open("rb") as f:
+                    f.seek(offset)
+                    chunk = f.read(32 * 1024)
+                if chunk:
+                    offset += len(chunk)
+                    payload = {
+                        "chunk_b64": _b64.b64encode(chunk).decode("ascii"),
+                        "offset": offset,
+                        "state": state,
+                    }
+                    yield f"data: {_json.dumps(payload)}\n\n"
+                    continue
+
+            if done:
+                yield f"data: {_json.dumps({'chunk_b64': '', 'offset': offset, 'state': state, 'done': True})}\n\n"
+                return
+
+            await asyncio.sleep(0.5)
 
     return StreamingResponse(
         event_stream(),
@@ -671,6 +893,13 @@ async def scrapers_page(request: Request, _: str = Depends(require_auth)):
             "request": request,
             "scrapers": scrapers,
         },
+    )
+
+@router.get("/scrapers/builder", response_class=HTMLResponse)
+async def scraper_builder_page(request: Request, _: str = Depends(require_auth)):
+    return templates(request).TemplateResponse(
+        "scrapers/builder.html",
+        {"request": request},
     )
 
 

@@ -5,7 +5,10 @@ from .amazon import AmazonDEScraper
 from .bergzeit import BergzeitScraper
 from .galaxus import GalaxusCHScraper, GalaxusDEScraper
 from .kaufland import KauflandScraper
+from .manor import ManorScraper
 from .sportscheck import SportscheckScraper
+from .transa import TransaScraper
+from .upswing import UpswingScraper
 
 __all__ = [
     "BaseScraper",
@@ -22,6 +25,9 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
     "galaxus_de": GalaxusDEScraper,
     "kaufland": KauflandScraper,
     "amazon_de": AmazonDEScraper,
+    "manor": ManorScraper,
+    "transa": TransaScraper,
+    "upswing": UpswingScraper,
 }
 
 SCRAPER_DISPLAY_NAMES: dict[str, str] = {
