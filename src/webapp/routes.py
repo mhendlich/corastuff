@@ -5,6 +5,7 @@ import base64
 import os
 import re
 import signal
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -19,6 +20,7 @@ from ..scrapers import get_scraper, get_scraper_display_name, list_scrapers
 from ..scheduler import get_scheduler, init_scheduler
 from ..job_queue import JobQueue
 from ..scraper_builder import (
+    find_codex_bin,
     generate_job_id,
     get_current_job_id,
     init_job,
@@ -66,7 +68,15 @@ def templates(request: Request):
 
 
 def _normalize_target_url(url: str) -> str:
-    parsed = urlparse((url or "").strip())
+    raw = (url or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="URL is required")
+    if raw.startswith("//"):
+        raw = "https:" + raw
+    elif "://" not in raw:
+        raw = "https://" + raw
+
+    parsed = urlparse(raw)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise HTTPException(status_code=400, detail="URL must be http(s) and include a hostname")
     parsed = parsed._replace(fragment="")
@@ -255,6 +265,11 @@ async def scraper_builder_start(
 
     normalized_url = _normalize_target_url(url)
 
+    try:
+        codex_bin = find_codex_bin()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
     # Clear stale locks.
     lock = read_lock()
     if lock and isinstance(lock.get("job_id"), str):
@@ -293,11 +308,21 @@ async def scraper_builder_start(
     log_file.parent.mkdir(parents=True, exist_ok=True)
     log_fp = log_file.open("ab")
     try:
+        env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
+        env["CODEX_BIN"] = codex_bin
+        extra_paths = [
+            str(Path(codex_bin).resolve().parent),
+            str(Path.home() / ".cargo" / "bin"),
+            str(Path.home() / ".local" / "bin"),
+        ]
+        existing_path = env.get("PATH", "")
+        prefix = ":".join([p for p in extra_paths if p])
+        env["PATH"] = f"{prefix}:{existing_path}" if existing_path else prefix
         proc = subprocess.Popen(
             [sys.executable, "-m", "src.scraper_builder_runner", "--job-id", job_id, "--url", normalized_url],
             cwd=Path(__file__).resolve().parent.parent.parent,
             start_new_session=True,
-            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"},
+            env=env,
             stdout=log_fp,
             stderr=subprocess.STDOUT,
         )

@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
-from .scraper_builder import REPO_ROOT, release_lock, write_job_status
+from .scraper_builder import REPO_ROOT, find_codex_bin, release_lock, write_job_status
 
 
 def _now_iso() -> str:
@@ -40,7 +40,13 @@ def _get_scrapers(*, cwd: Path) -> set[str]:
 
 
 def _normalize_url(url: str) -> str:
-    parsed = urlparse(url.strip())
+    raw = (url or "").strip()
+    if raw.startswith("//"):
+        raw = "https:" + raw
+    elif "://" not in raw:
+        raw = "https://" + raw
+
+    parsed = urlparse(raw)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise ValueError("URL must be http(s) and include a hostname")
     parsed = parsed._replace(fragment="")
@@ -148,8 +154,12 @@ def main() -> int:
     applied = False
 
     try:
-        if not shutil.which("codex"):
-            raise RuntimeError("codex CLI not found in PATH")
+        codex_bin = find_codex_bin()
+        codex_dir = str(Path(codex_bin).resolve().parent)
+        current_path = os.environ.get("PATH", "")
+        path_parts = [p for p in current_path.split(":") if p]
+        if codex_dir not in path_parts:
+            os.environ["PATH"] = f"{codex_dir}:{current_path}" if current_path else codex_dir
 
         write_job_status(job_id, {"phase": "copy", "workdir": str(workdir)})
         _safe_rmtree(workdir)
@@ -172,10 +182,10 @@ def main() -> int:
         write_job_status(job_id, {"phase": "codex", "scrapers_before": sorted(before_scrapers)})
 
         _print(f"[scraper-builder] job_id={job_id} url={url} started_at={_now_iso()}")
-        _print("[scraper-builder] Running codex agent...")
+        _print(f"[scraper-builder] Running codex agent ({codex_bin})...")
         prompt = _prompt_for_url(url)
         codex_proc = subprocess.run(
-            ["codex", "exec", "--yolo", "--color", "never", "--skip-git-repo-check", "-"],
+            [codex_bin, "exec", "--yolo", "--color", "never", "--skip-git-repo-check", "-"],
             cwd=workdir,
             text=True,
             input=prompt,
@@ -273,4 +283,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

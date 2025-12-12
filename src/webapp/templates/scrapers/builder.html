@@ -47,9 +47,10 @@
                 <input
                     id="scraper-builder-url"
                     name="url"
-                    type="url"
+                    type="text"
+                    inputmode="url"
                     required
-                    placeholder="https://example.com/collections/..."
+                    placeholder="example.com/collections/... (https assumed)"
                     class="w-full rounded-md bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-brand/50">
             </div>
             <div class="md:col-span-3">
@@ -213,15 +214,38 @@
         form.addEventListener("submit", async (e) => {
             e.preventDefault();
             setStatus("Starting…", "warn");
-            setControls(true);
 
+            function formatDetail(detail) {
+                if (!detail) return "";
+                if (typeof detail === "string") return detail;
+                if (Array.isArray(detail)) {
+                    return detail
+                        .map((it) => {
+                            if (typeof it === "string") return it;
+                            if (!it || typeof it !== "object") return String(it);
+                            const loc = Array.isArray(it.loc) ? it.loc.join(".") : "";
+                            const msg = it.msg || it.message || JSON.stringify(it);
+                            return loc ? `${loc}: ${msg}` : String(msg);
+                        })
+                        .join("; ");
+                }
+                try {
+                    return JSON.stringify(detail);
+                } catch (_) {
+                    return String(detail);
+                }
+            }
+
+            // Important: capture FormData BEFORE disabling controls (disabled fields are not submitted).
             const fd = new FormData(form);
+            setControls(true);
             const res = await fetch("/api/scraper-builder/start", { method: "POST", body: fd });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) {
                 window.__disableDevAutoReload = false;
                 setControls(false);
-                setStatus(`Failed to start${body && body.detail ? ": " + body.detail : ""}`, "bad");
+                const detail = body && body.detail ? formatDetail(body.detail) : "";
+                setStatus(`Failed to start${detail ? ": " + detail : ""}`, "bad");
                 return;
             }
             window.__disableDevAutoReload = true;
@@ -242,4 +266,3 @@
     })();
 </script>
 {% endblock %}
-
