@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import re
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -22,7 +23,6 @@ from .auth import (
 )
 
 router = APIRouter()
-
 
 class ScraperStatus(Enum):
     IDLE = "idle"
@@ -408,26 +408,38 @@ async def get_link_suggestions(
 
     payload = []
     for suggestion in suggestions:
+        matches_payload: list[dict] = []
+        for match in suggestion.get("matches") or []:
+            matches_payload.append(
+                {
+                    "source": match.get("source"),
+                    "source_item_id": match.get("source_item_id"),
+                    "product_name": match.get("product_name"),
+                    "product_price": match.get("product_price"),
+                    "product_currency": match.get("product_currency"),
+                    "product_url": match.get("product_url"),
+                    "score": match.get("score"),
+                    "reasons": match.get("reasons") or [],
+                    "matched_name": match.get("matched_name"),
+                    "product_image": _to_data_uri(
+                        match.get("product_image"), match.get("product_image_mime")
+                    ),
+                }
+            )
+
         payload.append(
             {
-                "source": suggestion.get("source"),
-                "source_item_id": suggestion.get("source_item_id"),
-                "product_name": suggestion.get("product_name"),
-                "product_price": suggestion.get("product_price"),
-                "product_currency": suggestion.get("product_currency"),
-                "product_url": suggestion.get("product_url"),
                 "canonical_id": suggestion.get("canonical_id"),
                 "canonical_name": suggestion.get("canonical_name"),
                 "score": suggestion.get("score"),
                 "reasons": suggestion.get("reasons") or [],
-                "matched_name": suggestion.get("matched_name"),
                 "linked_names": suggestion.get("linked_names") or [],
-                "product_image": _to_data_uri(
-                    suggestion.get("product_image"), suggestion.get("product_image_mime")
-                ),
                 "canonical_image": _to_data_uri(
                     suggestion.get("canonical_image"), suggestion.get("canonical_image_mime")
                 ),
+                "create_new": bool(suggestion.get("create_new")),
+                "seed_source": suggestion.get("seed_source"),
+                "matches": matches_payload,
             }
         )
 
@@ -535,6 +547,72 @@ async def stats_partial(request: Request, _: str = Depends(require_auth)):
         {
             "request": request,
             "stats": stats,
+        },
+    )
+
+
+# --- Amazon Pricing ---
+
+
+@router.get("/amazon-pricing", response_class=HTMLResponse)
+async def amazon_pricing_page(request: Request, _: str = Depends(require_auth)):
+    """Amazon-centric pricing overview and opportunities."""
+    db = get_db(request)
+    items = db.get_amazon_pricing_items(only_with_amazon=True)
+
+    undercut = [i for i in items if i.get("action") == "undercut"]
+    raise_ops = [i for i in items if i.get("action") == "raise"]
+    watch = [i for i in items if i.get("action") == "watch"]
+    missing_competitors = [i for i in items if i.get("action") == "missing_competitors"]
+    missing_own_price = [i for i in items if i.get("action") == "missing_own_price"]
+
+    def _sum_delta(list_items: list[dict], key: str) -> float:
+        total = 0.0
+        for it in list_items:
+            val = it.get(key)
+            if val is None:
+                continue
+            try:
+                total += float(val)
+            except Exception:
+                continue
+        return total
+
+    potential_gain = 0.0
+    for it in raise_ops:
+        if it.get("suggested_price") is None or it.get("own_price") is None:
+            continue
+        potential_gain += float(it["suggested_price"]) - float(it["own_price"])
+
+    summary = {
+        "total_tracked": len(items),
+        "undercut_count": len(undercut),
+        "raise_count": len(raise_ops),
+        "watch_count": len(watch),
+        "missing_competitors_count": len(missing_competitors),
+        "missing_own_price_count": len(missing_own_price),
+        "missing_data_count": len(missing_competitors) + len(missing_own_price),
+        "total_overprice": _sum_delta(undercut, "delta_abs"),
+        "total_potential_gain": potential_gain,
+    }
+
+    canonical_products = db.get_all_canonical_products()
+    sources = db.get_sources()
+    source_display_names = {s: get_scraper_display_name(s) for s in sources}
+
+    return templates(request).TemplateResponse(
+        "amazon/index.html",
+        {
+            "request": request,
+            "items": items,
+            "undercut": undercut,
+            "raise_ops": raise_ops,
+            "watch": watch,
+            "missing_competitors": missing_competitors,
+            "missing_own_price": missing_own_price,
+            "summary": summary,
+            "canonical_products": canonical_products,
+            "source_display_names": source_display_names,
         },
     )
 

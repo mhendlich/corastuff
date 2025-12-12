@@ -447,7 +447,11 @@ class ProductDatabase:
             )
             return [dict(row) for row in cursor.fetchall()]
 
-    def get_unlinked_products(self, include_images: bool = True) -> list[dict]:
+    def get_unlinked_products(
+        self,
+        include_images: bool = True,
+        source: str | None = None,
+    ) -> list[dict]:
         """Get latest products that are not linked to any canonical product.
 
         include_images=False avoids pulling large blobs when we only need metadata.
@@ -459,6 +463,12 @@ class ProductDatabase:
         )
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
+            where_source = ""
+            params: list[str] = []
+            if source:
+                where_source = " AND p.source = ?"
+                params.append(source)
+
             cursor = conn.execute(
                 """
                 SELECT p.*{image_select}
@@ -471,8 +481,10 @@ class ProductDatabase:
                 AND p.scraped_at = (
                     SELECT MAX(p2.scraped_at) FROM products p2 WHERE p2.source = p.source
                 )
+                {where_source}
                 ORDER BY p.source, p.name
-                """.format(image_select=image_select)
+                """.format(image_select=image_select, where_source=where_source),
+                params,
             )
             return [dict(row) for row in cursor.fetchall()]
 
@@ -498,6 +510,164 @@ class ProductDatabase:
             )
             return [dict(row) for row in cursor.fetchall()]
 
+    # --- Amazon Pricing / Manual Inputs ---
+
+    def add_manual_amazon_product(
+        self,
+        asin: str,
+        name: str | None = None,
+        price: float | None = None,
+        currency: str | None = "EUR",
+        url: str | None = None,
+    ) -> int:
+        """Insert a manual Amazon price snapshot into products history.
+
+        This is used before the Amazon scraper exists and continues to be useful
+        for quick corrections. The Amazon listing is identified by ASIN.
+        """
+        asin_clean = (asin or "").strip()
+        if not asin_clean:
+            raise ValueError("ASIN is required")
+
+        now = datetime.utcnow().isoformat()
+        display_name = (name or asin_clean).strip()
+        product_key = asin_clean
+
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO products (source, scraped_at, name, price, currency, url, item_id, product_key)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("amazon", now, display_name, price, currency, url, asin_clean, product_key),
+            )
+            conn.commit()
+            return int(cursor.lastrowid)
+
+    def get_amazon_pricing_items(
+        self,
+        amazon_prefix: str = "amazon",
+        undercut_by: float = 0.01,
+        tolerance: float = 0.01,
+        only_with_amazon: bool = False,
+    ) -> list[dict]:
+        """Compute Amazon vs retailer pricing opportunities per canonical product.
+
+        Returns one item per canonical with:
+          - action: undercut | raise | watch | missing_amazon | missing_competitors | missing_own_price
+          - suggested_price when applicable
+
+        When `only_with_amazon` is True, canonicals without an Amazon link are skipped.
+        """
+        canonicals = self.get_all_canonical_products()
+        items: list[dict] = []
+
+        def is_amazon_source(source: str | None) -> bool:
+            if not source:
+                return False
+            return source == amazon_prefix or source.startswith(amazon_prefix)
+
+        for canonical in canonicals:
+            canonical_id = int(canonical["id"])
+            links = self.get_links_for_canonical(canonical_id)
+
+            amazon_links = [l for l in links if is_amazon_source(l.get("source"))]
+            competitor_links = [l for l in links if l.get("source") and not is_amazon_source(l.get("source"))]
+
+            # Pick a primary Amazon listing to compare (lowest priced if multiple).
+            primary_amazon = None
+            if amazon_links:
+                with_prices = [l for l in amazon_links if l.get("price") is not None]
+                primary_amazon = min(with_prices, key=lambda l: float(l["price"])) if with_prices else amazon_links[0]
+
+            competitor_with_prices = [l for l in competitor_links if l.get("price") is not None]
+            comp_min = min(competitor_with_prices, key=lambda l: float(l["price"])) if competitor_with_prices else None
+            comp_max = max(competitor_with_prices, key=lambda l: float(l["price"])) if competitor_with_prices else None
+
+            item: dict = {
+                "canonical_id": canonical_id,
+                "canonical_name": canonical.get("name"),
+                "canonical_description": canonical.get("description"),
+                "amazon_links": amazon_links,
+                "primary_amazon": primary_amazon,
+                "competitors": competitor_with_prices,
+                "competitor_min": comp_min,
+                "competitor_max": comp_max,
+                "competitor_count": len(competitor_with_prices),
+                "action": None,
+                "own_price": None,
+                "own_currency": None,
+                "delta_abs": None,
+                "delta_pct": None,
+                "suggested_price": None,
+                "suggested_reason": None,
+            }
+
+            if not amazon_links:
+                if only_with_amazon:
+                    continue
+                item["action"] = "missing_amazon"
+                items.append(item)
+                continue
+
+            own_price = primary_amazon.get("price") if primary_amazon else None
+            item["own_price"] = own_price
+            item["own_currency"] = primary_amazon.get("currency") if primary_amazon else None
+
+            if own_price is None:
+                item["action"] = "missing_own_price"
+                items.append(item)
+                continue
+
+            if not competitor_with_prices:
+                item["action"] = "missing_competitors"
+                items.append(item)
+                continue
+
+            comp_min_price = float(comp_min["price"]) if comp_min else None
+            own_price_f = float(own_price)
+            if comp_min_price is None or comp_min_price <= 0:
+                item["action"] = "missing_competitors"
+                items.append(item)
+                continue
+
+            delta_abs = own_price_f - comp_min_price
+            delta_pct = (delta_abs / comp_min_price) * 100 if comp_min_price else None
+            item["delta_abs"] = delta_abs
+            item["delta_pct"] = delta_pct
+
+            if delta_abs > tolerance:
+                item["action"] = "undercut"
+                item["suggested_price"] = max(comp_min_price - undercut_by, 0.0)
+                item["suggested_reason"] = f"Undercut {comp_min.get('source')} by {undercut_by:.2f}"
+            elif delta_abs < -tolerance:
+                item["action"] = "raise"
+                item["suggested_price"] = comp_min_price
+                item["suggested_reason"] = f"Match lowest retailer ({comp_min.get('source')})"
+            else:
+                item["action"] = "watch"
+
+            items.append(item)
+
+        # Sort by urgency: undercut first (largest overprice), then raise (largest gap), then others.
+        def sort_key(it: dict) -> tuple:
+            action = it.get("action")
+            delta_abs = it.get("delta_abs") or 0.0
+            if action == "undercut":
+                return (0, -abs(delta_abs))
+            if action == "raise":
+                return (1, -abs(delta_abs))
+            if action == "watch":
+                return (2, 0)
+            if action == "missing_own_price":
+                return (3, 0)
+            if action == "missing_competitors":
+                return (4, 0)
+            return (5, 0)
+
+        items.sort(key=sort_key)
+        return items
+
     def get_product_image_by_hash(self, image_hash: str) -> dict | None:
         """Fetch a stored product image by its content hash."""
         with sqlite3.connect(self.db_path) as conn:
@@ -518,14 +688,289 @@ class ProductDatabase:
         exclude_set = {key for key in (exclude_keys or []) if key}
         unlinked = self.get_unlinked_products()
         canonical_products = self.get_all_canonical_products()
-        canonical_assets = self._build_canonical_asset_index(canonical_products)
+
+        matches: list[dict] = []
+
+        # If no canonicals exist yet, bootstrap suggestions by fuzzy matching
+        # unlinked products against a "seed" source so users can create canonicals.
+        if not canonical_products:
+            bootstrap_limit = min(limit * 10, 200)
+            matches = self._bootstrap_link_suggestions(
+                unlinked_products=unlinked,
+                limit=bootstrap_limit,
+                exclude_set=exclude_set,
+            )
+        else:
+            canonical_assets = self._build_canonical_asset_index(canonical_products)
+
+            for product in unlinked:
+                product_key = f"{product['source']}::{product.get('item_id') or ''}"
+                if product_key in exclude_set:
+                    continue
+
+                product_features = self._extract_product_features(product)
+                best_match = None
+
+                for canonical in canonical_products:
+                    assets = canonical_assets.get(
+                        canonical["id"],
+                        {"linked_names": set(), "item_ids": set(), "images": []},
+                    )
+                    score, reasons, details = self._score_match(
+                        product, product_features, canonical, assets
+                    )
+                    if score <= 0.35:
+                        continue
+
+                    if not best_match or score > best_match["score"]:
+                        canonical_image = None
+                        canonical_image_mime = None
+                        if details.get("image_bytes"):
+                            canonical_image = details["image_bytes"]
+                            canonical_image_mime = details.get("image_mime")
+                        elif assets.get("images"):
+                            canonical_image = assets["images"][0].get("data")
+                            canonical_image_mime = assets["images"][0].get("mime")
+
+                        best_match = {
+                            "source": product["source"],
+                            "source_item_id": product.get("item_id"),
+                            "product_name": product.get("name"),
+                            "product_price": product.get("price"),
+                            "product_currency": product.get("currency"),
+                            "product_url": product.get("url"),
+                            "product_image": product.get("image_data"),
+                            "product_image_mime": product.get("image_mime"),
+                            "canonical_id": canonical["id"],
+                            "canonical_name": canonical["name"],
+                            "score": round(score, 4),
+                            "reasons": reasons,
+                            "matched_name": details.get("matched_name"),
+                            "canonical_image": canonical_image,
+                            "canonical_image_mime": canonical_image_mime,
+                            "linked_names": sorted(list(assets.get("linked_names", [])))[:3],
+                        }
+
+                if best_match:
+                    matches.append(best_match)
+
+        if not matches:
+            return []
+
+        # Group matches per canonical (one product per source).
+        groups: dict[object, dict] = {}
+        for match in matches:
+            canonical_id = match.get("canonical_id")
+            if canonical_id is None:
+                seed_source = match.get("seed_source") or ""
+                seed_item_id = match.get("seed_item_id") or match.get("canonical_name") or ""
+                canonical_key: object = f"seed::{seed_source}::{seed_item_id}"
+            else:
+                canonical_key = canonical_id
+
+            group = groups.get(canonical_key)
+            if group is None:
+                group = {
+                    "canonical_id": canonical_id,
+                    "canonical_name": match.get("canonical_name"),
+                    "canonical_image": match.get("canonical_image"),
+                    "canonical_image_mime": match.get("canonical_image_mime"),
+                    "linked_names": match.get("linked_names") or [],
+                    "reasons": match.get("reasons") or [],
+                    "matched_name": match.get("matched_name"),
+                    "score": match.get("score") or 0.0,
+                    "create_new": bool(match.get("create_new")),
+                    "seed_source": match.get("seed_source"),
+                    "_matches_by_source": {},
+                }
+                groups[canonical_key] = group
+
+            source = match.get("source")
+            if not source:
+                continue
+            existing = group["_matches_by_source"].get(source)
+            if existing is None or (match.get("score") or 0.0) > (existing.get("score") or 0.0):
+                group["_matches_by_source"][source] = match
+
+            if (match.get("score") or 0.0) > (group.get("score") or 0.0):
+                group["score"] = match.get("score") or 0.0
+                group["reasons"] = match.get("reasons") or []
+                group["matched_name"] = match.get("matched_name")
+                group["canonical_image"] = match.get("canonical_image")
+                group["canonical_image_mime"] = match.get("canonical_image_mime")
+                if match.get("linked_names"):
+                    group["linked_names"] = match.get("linked_names") or group["linked_names"]
+            if match.get("create_new"):
+                group["create_new"] = True
+                if match.get("seed_source"):
+                    group["seed_source"] = match.get("seed_source")
+
+        grouped: list[dict] = []
+        for group in groups.values():
+            matches_for_group = list(group.pop("_matches_by_source").values())
+            matches_for_group.sort(key=lambda m: m.get("score") or 0.0, reverse=True)
+            group["matches"] = matches_for_group
+            grouped.append(group)
+
+        grouped.sort(key=lambda g: g.get("score") or 0.0, reverse=True)
+        return grouped[:limit]
+
+    def _bootstrap_link_suggestions(
+        self,
+        unlinked_products: list[dict],
+        limit: int,
+        exclude_set: set[str],
+        min_score: float = 0.35,
+    ) -> list[dict]:
+        """Suggest matches even when there are no canonicals.
+
+        Strategy: pick the largest source as a stable seed pool and match other
+        sources' products to it. Suggestions are returned with canonical_id=None
+        and create_new=True so the UI can create a canonical on approval.
+        """
+        if not unlinked_products:
+            return []
+
+        products_by_source: dict[str, list[dict]] = defaultdict(list)
+        for product in unlinked_products:
+            if not product.get("source"):
+                continue
+            products_by_source[product["source"]].append(product)
+
+        if len(products_by_source) < 2:
+            return []
+
+        seed_source = max(products_by_source.items(), key=lambda kv: len(kv[1]))[0]
+        seed_products = products_by_source.get(seed_source, [])
+        if not seed_products:
+            return []
+
+        seed_index: list[tuple[dict, dict, set[str], dict]] = []
+        for seed in seed_products:
+            seed_name = seed.get("name") or ""
+            seed_tokens = self._tokenize(seed_name)
+            seed_features = self._extract_product_features(seed)
+            seed_assets = {
+                "linked_names": {seed_name} if seed_name else set(),
+                "item_ids": {str(seed.get("item_id"))} if seed.get("item_id") else set(),
+                "images": [],
+            }
+            if seed.get("image_data"):
+                seed_assets["images"].append(
+                    {
+                        "hash": seed.get("image_hash"),
+                        "avg_hash": seed_features.get("avg_hash"),
+                        "data": seed.get("image_data"),
+                        "mime": seed.get("image_mime"),
+                    }
+                )
+            seed_index.append((seed, seed_features, seed_tokens, seed_assets))
 
         suggestions: list[dict] = []
-        for product in unlinked:
-            product_key = f"{product['source']}::{product.get('item_id') or ''}"
+        for product in unlinked_products:
+            if product.get("source") == seed_source:
+                continue
+
+            product_key = f"{product.get('source')}::{product.get('item_id') or ''}"
             if product_key in exclude_set:
                 continue
 
+            product_features = self._extract_product_features(product)
+            product_name = product.get("name") or ""
+            product_tokens = self._tokenize(product_name)
+
+            best_match = None
+            best_seed = None
+            best_details = None
+            best_reasons: list[str] = []
+
+            for seed, _seed_features, seed_tokens, seed_assets in seed_index:
+                if product_tokens and seed_tokens and not (product_tokens & seed_tokens):
+                    continue
+
+                score, reasons, details = self._score_match(
+                    product,
+                    product_features,
+                    {"id": -1, "name": seed.get("name") or ""},
+                    seed_assets,
+                )
+                if score <= min_score:
+                    continue
+                if not best_match or score > best_match:
+                    best_match = score
+                    best_seed = seed
+                    best_details = details
+                    best_reasons = reasons
+
+            if best_match is None or best_seed is None:
+                continue
+
+            canonical_name = best_seed.get("name")
+            canonical_image = None
+            canonical_image_mime = None
+            if best_details and best_details.get("image_bytes"):
+                canonical_image = best_details["image_bytes"]
+                canonical_image_mime = best_details.get("image_mime")
+            elif best_seed.get("image_data"):
+                canonical_image = best_seed.get("image_data")
+                canonical_image_mime = best_seed.get("image_mime")
+
+            reasons = list(best_reasons)
+            reasons.append("Creates new canonical on approval")
+
+            suggestions.append(
+                {
+                    "source": product.get("source"),
+                    "source_item_id": product.get("item_id"),
+                    "product_name": product.get("name"),
+                    "product_price": product.get("price"),
+                    "product_currency": product.get("currency"),
+                    "product_url": product.get("url"),
+                    "product_image": product.get("image_data"),
+                    "product_image_mime": product.get("image_mime"),
+                    "canonical_id": None,
+                    "canonical_name": canonical_name,
+                    "score": round(float(best_match), 4),
+                    "reasons": reasons,
+                    "matched_name": best_details.get("matched_name") if best_details else None,
+                    "canonical_image": canonical_image,
+                    "canonical_image_mime": canonical_image_mime,
+                    "linked_names": [],
+                    "create_new": True,
+                    "seed_source": seed_source,
+                    "seed_item_id": best_seed.get("item_id"),
+                }
+            )
+
+        suggestions.sort(key=lambda s: s.get("score") or 0.0, reverse=True)
+        return suggestions[:limit]
+
+    def auto_link_source_products(
+        self,
+        source: str,
+        min_score: float = 0.8,
+        max_links: int | None = None,
+    ) -> list[dict]:
+        """Automatically link latest unlinked products from a source to canonicals.
+
+        Uses the same scoring model as link suggestions. Only links when the best
+        match score is >= min_score. Returns a list of link actions taken.
+        """
+        if not source:
+            return []
+
+        unlinked = self.get_unlinked_products(include_images=True, source=source)
+        if not unlinked:
+            return []
+
+        canonical_products = self.get_all_canonical_products()
+        if not canonical_products:
+            return []
+
+        canonical_assets = self._build_canonical_asset_index(canonical_products)
+        actions: list[dict] = []
+
+        for product in unlinked:
             product_features = self._extract_product_features(product)
             best_match = None
 
@@ -534,46 +979,78 @@ class ProductDatabase:
                     canonical["id"],
                     {"linked_names": set(), "item_ids": set(), "images": []},
                 )
-                score, reasons, details = self._score_match(
+                score, reasons, _details = self._score_match(
                     product, product_features, canonical, assets
                 )
-                if score <= 0.35:
+                if score < min_score:
                     continue
-
                 if not best_match or score > best_match["score"]:
-                    canonical_image = None
-                    canonical_image_mime = None
-                    if details.get("image_bytes"):
-                        canonical_image = details["image_bytes"]
-                        canonical_image_mime = details.get("image_mime")
-                    elif assets.get("images"):
-                        canonical_image = assets["images"][0].get("data")
-                        canonical_image_mime = assets["images"][0].get("mime")
-
                     best_match = {
-                        "source": product["source"],
-                        "source_item_id": product.get("item_id"),
-                        "product_name": product.get("name"),
-                        "product_price": product.get("price"),
-                        "product_currency": product.get("currency"),
-                        "product_url": product.get("url"),
-                        "product_image": product.get("image_data"),
-                        "product_image_mime": product.get("image_mime"),
                         "canonical_id": canonical["id"],
-                        "canonical_name": canonical["name"],
-                        "score": round(score, 4),
+                        "canonical_name": canonical.get("name"),
+                        "score": score,
                         "reasons": reasons,
-                        "matched_name": details.get("matched_name"),
-                        "canonical_image": canonical_image,
-                        "canonical_image_mime": canonical_image_mime,
-                        "linked_names": sorted(list(assets.get("linked_names", [])))[:3],
                     }
 
-            if best_match:
-                suggestions.append(best_match)
+            if not best_match:
+                continue
 
-        suggestions.sort(key=lambda s: s["score"], reverse=True)
-        return suggestions[:limit]
+            source_item_id = str(product.get("item_id") or "").strip()
+            if not source_item_id:
+                continue
+
+            link_id = self.link_product(best_match["canonical_id"], source, source_item_id)
+            if link_id is None:
+                continue
+
+            actions.append(
+                {
+                    "link_id": link_id,
+                    "source": source,
+                    "source_item_id": source_item_id,
+                    "product_name": product.get("name"),
+                    "canonical_id": best_match["canonical_id"],
+                    "canonical_name": best_match["canonical_name"],
+                    "score": round(float(best_match["score"]), 4),
+                    "reasons": best_match["reasons"],
+                }
+            )
+
+            if max_links is not None and len(actions) >= max_links:
+                break
+
+        return actions
+
+    def get_tracked_amazon_links(self, amazon_prefix: str = "amazon") -> list[dict]:
+        """Return distinct Amazon links (source + ASIN) attached to canonicals."""
+        like_pattern = f"{amazon_prefix}%"
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                SELECT DISTINCT canonical_id, source, source_item_id
+                FROM product_links
+                WHERE source = ? OR source LIKE ?
+                """,
+                (amazon_prefix, like_pattern),
+            )
+            links: list[dict] = []
+            for row in cursor.fetchall():
+                asin = str(row["source_item_id"] or "").strip().upper()
+                if not asin:
+                    continue
+                links.append(
+                    {
+                        "canonical_id": row["canonical_id"],
+                        "source": row["source"],
+                        "asin": asin,
+                    }
+                )
+            return links
+
+    def get_tracked_amazon_asins(self, amazon_prefix: str = "amazon") -> set[str]:
+        """Return all ASINs linked to canonicals for Amazon sources."""
+        return {l["asin"] for l in self.get_tracked_amazon_links(amazon_prefix=amazon_prefix)}
 
     def _build_canonical_asset_index(self, canonical_products: list[dict]) -> dict[int, dict]:
         """Collect linked names, SKUs, and images for each canonical product."""

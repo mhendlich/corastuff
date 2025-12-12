@@ -4,24 +4,12 @@
 
 {% block page_title %}Scrapers{% endblock %}
 {% block page_subtitle %}
-<p class="mt-1 text-sm text-slate-400">Run and monitor every data source at a glance</p>
+<p class="mt-1 text-sm text-slate-400">Run, monitor, and automate data sources from one place.</p>
 {% endblock %}
 {% block page_actions %}
-<a href="/scrapers/history" class="app-btn-secondary inline-flex items-center px-3 py-2 rounded-md text-sm font-medium">
-    <svg class="-ml-0.5 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
-    </svg>
-    History
-</a>
-<a href="/scrapers/schedules" class="app-btn-secondary inline-flex items-center px-3 py-2 rounded-md text-sm font-medium">
-    <svg class="-ml-0.5 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-    </svg>
-    Schedules
-</a>
 <button
     hx-post="/scrapers/run-all"
-    hx-target="#scrapers-tbody"
+    hx-target="#scrapers-list"
     hx-swap="innerHTML"
     class="app-btn inline-flex items-center px-4 py-2 rounded-md text-sm font-semibold">
     <svg class="-ml-0.5 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -29,23 +17,39 @@
     </svg>
     Run All
 </button>
+<a href="/scrapers/schedules" class="app-btn-secondary inline-flex items-center px-3 py-2 rounded-md text-sm font-medium">
+    <svg class="-ml-0.5 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+    </svg>
+    Automation
+</a>
+<a href="/scrapers/history" class="app-btn-secondary inline-flex items-center px-3 py-2 rounded-md text-sm font-medium">
+    <svg class="-ml-0.5 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+    </svg>
+    History
+</a>
 {% endblock %}
 
 {% block content %}
-<div class="space-y-5">
+<div class="space-y-6">
     {% set running = scrapers | selectattr('status', 'equalto', 'running') | list | length %}
     {% set pending = scrapers | selectattr('status', 'equalto', 'pending') | list | length %}
     {% set completed = scrapers | selectattr('status', 'equalto', 'completed') | list | length %}
-    <div class="grid grid-cols-3 gap-4">
+    {% set failed = scrapers | selectattr('status', 'equalto', 'failed') | list | length %}
+    {% set idle = scrapers | selectattr('status', 'equalto', 'idle') | list | length %}
+
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div class="app-card app-card-hover p-4">
             <div class="flex items-center justify-between">
                 <div>
                     <div class="text-[11px] uppercase tracking-widest text-slate-400">Running</div>
                     <div class="mt-1 text-2xl font-semibold text-white">{{ running }}</div>
                 </div>
-                <div class="h-10 w-10 rounded-lg bg-emerald-500/15 text-emerald-300 grid place-items-center border border-emerald-500/30">
-                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                <div class="h-9 w-9 rounded-lg bg-brand/15 text-brand-soft grid place-items-center border border-brand/30">
+                    <svg class="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                 </div>
             </div>
@@ -56,9 +60,22 @@
                     <div class="text-[11px] uppercase tracking-widest text-slate-400">Queued</div>
                     <div class="mt-1 text-2xl font-semibold text-white">{{ pending }}</div>
                 </div>
-                <div class="h-10 w-10 rounded-lg bg-amber-500/15 text-amber-200 grid place-items-center border border-amber-500/30">
-                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="h-9 w-9 rounded-lg bg-amber-500/15 text-amber-200 grid place-items-center border border-amber-500/30">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3"></path>
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <div class="app-card app-card-hover p-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <div class="text-[11px] uppercase tracking-widest text-slate-400">Failed</div>
+                    <div class="mt-1 text-2xl font-semibold text-white">{{ failed }}</div>
+                </div>
+                <div class="h-9 w-9 rounded-lg bg-red-500/15 text-red-200 grid place-items-center border border-red-500/30">
+                    <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
                     </svg>
                 </div>
             </div>
@@ -69,49 +86,75 @@
                     <div class="text-[11px] uppercase tracking-widest text-slate-400">Completed</div>
                     <div class="mt-1 text-2xl font-semibold text-white">{{ completed }}</div>
                 </div>
-                <div class="h-10 w-10 rounded-lg bg-brand/15 text-brand-soft grid place-items-center border border-brand/30">
-                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="h-9 w-9 rounded-lg bg-emerald-500/15 text-emerald-300 grid place-items-center border border-emerald-500/30">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <div class="app-card app-card-hover p-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <div class="text-[11px] uppercase tracking-widest text-slate-400">Idle</div>
+                    <div class="mt-1 text-2xl font-semibold text-white">{{ idle }}</div>
+                </div>
+                <div class="h-9 w-9 rounded-lg bg-white/5 text-slate-300 grid place-items-center border border-white/10">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"></path>
                     </svg>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="app-card overflow-hidden">
-        <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-            <div>
-                <h2 class="text-sm font-semibold text-white/90">Data Source Scrapers</h2>
-                <p class="text-xs text-slate-400 mt-0.5">Auto-refreshes while runs are active.</p>
-            </div>
+    <div class="app-card p-4 flex flex-col md:flex-row md:items-end gap-4">
+        <div class="flex-1">
+            <label for="scraper-search" class="block text-[11px] uppercase tracking-widest text-slate-400">Search scrapers</label>
+            <input id="scraper-search" type="text" placeholder="Type to filter by name…"
+                class="mt-1 w-full app-input rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/60">
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+            <button type="button" data-status-filter="all"
+                class="status-chip inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold border bg-brand/20 text-brand-soft border-brand/40">
+                All
+            </button>
+            <button type="button" data-status-filter="running"
+                class="status-chip inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold border bg-white/5 text-slate-300 border-white/10 hover:bg-white/10">
+                Running
+            </button>
+            <button type="button" data-status-filter="pending"
+                class="status-chip inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold border bg-white/5 text-slate-300 border-white/10 hover:bg-white/10">
+                Queued
+            </button>
+            <button type="button" data-status-filter="failed"
+                class="status-chip inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold border bg-white/5 text-slate-300 border-white/10 hover:bg-white/10">
+                Failed
+            </button>
+            <button type="button" data-status-filter="idle"
+                class="status-chip inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold border bg-white/5 text-slate-300 border-white/10 hover:bg-white/10">
+                Idle
+            </button>
+            <button type="button" data-status-filter="completed"
+                class="status-chip inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold border bg-white/5 text-slate-300 border-white/10 hover:bg-white/10">
+                Completed
+            </button>
+        </div>
+        <div class="text-xs text-slate-400 md:ml-auto">
+            Showing <span id="scrapers-count">{{ scrapers|length }}</span> of {{ scrapers|length }}
+        </div>
+    </div>
+
+    <div>
+        <div class="flex items-center justify-between px-1 mb-3">
+            <h2 class="text-sm font-semibold text-white/90">Data Source Scrapers</h2>
             <div class="text-xs text-slate-400">{{ scrapers|length }} total</div>
         </div>
-        <table class="min-w-full divide-y divide-white/10 text-sm">
-            <thead class="bg-white/5">
-                <tr>
-                    <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                        Scraper
-                    </th>
-                    <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                        Status
-                    </th>
-                    <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                        Last Run
-                    </th>
-                    <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                        Products
-                    </th>
-                    <th scope="col" class="px-6 py-3 text-right text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                        Actions
-                    </th>
-                </tr>
-            </thead>
-            <tbody id="scrapers-tbody" class="divide-y divide-white/5">
-                {% for scraper in scrapers %}
-                {% include "scrapers/_row.html" %}
-                {% endfor %}
-            </tbody>
-        </table>
+        <div id="scrapers-list" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {% for scraper in scrapers %}
+            {% include "scrapers/_row.html" %}
+            {% endfor %}
+        </div>
     </div>
 
     <div class="app-card p-4 text-sm text-slate-300/90 border border-white/10">
@@ -121,9 +164,65 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m2-4h.01M12 18a6 6 0 100-12 6 6 0 000 12z"></path>
                 </svg>
             </span>
-            Jobs run on the worker process. Start it with <code class="bg-white/10 border border-white/10 px-1.5 py-0.5 rounded font-mono text-xs text-white">python -m src.cli --worker</code>.
+            Scrapes run on the worker process. Start it with
+            <code class="bg-white/10 border border-white/10 px-1.5 py-0.5 rounded font-mono text-xs text-white">python -m src.cli --worker</code>.
         </p>
-        <p class="mt-2 text-xs text-slate-500">Scrapers can take 60+ seconds; rows update live while running.</p>
+        <p class="mt-2 text-xs text-slate-500">Runs can take a minute or more; cards auto-refresh while active.</p>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (function() {
+        const searchInput = document.getElementById("scraper-search");
+        const chips = Array.from(document.querySelectorAll(".status-chip"));
+        const list = document.getElementById("scrapers-list");
+        const countEl = document.getElementById("scrapers-count");
+
+        const activeClasses = ["bg-brand/20", "text-brand-soft", "border-brand/40"];
+        const inactiveClasses = ["bg-white/5", "text-slate-300", "border-white/10", "hover:bg-white/10"];
+
+        function setActiveChip(chip) {
+            chips.forEach(c => {
+                c.classList.remove(...activeClasses);
+                c.classList.add(...inactiveClasses);
+            });
+            chip.classList.remove(...inactiveClasses);
+            chip.classList.add(...activeClasses);
+        }
+
+        function applyFilters() {
+            const q = (searchInput.value || "").toLowerCase().trim();
+            const activeChip = chips.find(c => c.classList.contains(activeClasses[0]));
+            const statusFilter = activeChip ? activeChip.dataset.statusFilter : "all";
+
+            const cards = Array.from(list.querySelectorAll("[data-scraper-card]"));
+            let visible = 0;
+            cards.forEach(card => {
+                const name = (card.dataset.scraperName || "").toLowerCase();
+                const status = (card.dataset.status || "idle").toLowerCase();
+                const matchQ = !q || name.includes(q);
+                const matchS = statusFilter === "all" || status === statusFilter;
+                card.style.display = matchQ && matchS ? "" : "none";
+                if (card.style.display !== "none") visible += 1;
+            });
+            countEl.textContent = visible;
+        }
+
+        chips.forEach(chip => chip.addEventListener("click", () => {
+            setActiveChip(chip);
+            applyFilters();
+        }));
+        searchInput.addEventListener("input", applyFilters);
+
+        document.body.addEventListener("htmx:afterSwap", (e) => {
+            if (e.target && (e.target.id === "scrapers-list" || e.target.closest && e.target.closest("#scrapers-list"))) {
+                applyFilters();
+            }
+        });
+
+        applyFilters();
+    })();
+</script>
 {% endblock %}

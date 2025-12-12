@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 
-{% block title %}Scraper Schedules - Blackroll Scraper{% endblock %}
+{% block title %}Scraper Automation - Blackroll Scraper{% endblock %}
 
-{% block page_title %}Scraper Schedules{% endblock %}
+{% block page_title %}Automation{% endblock %}
 {% block page_subtitle %}
-<p class="mt-1 text-sm text-slate-400">Automate refresh intervals for every source.</p>
+<p class="mt-1 text-sm text-slate-400">Control the scheduler and set refresh intervals per source.</p>
 {% endblock %}
 {% block page_actions %}
 <a href="/scrapers" class="app-btn-secondary inline-flex items-center px-3 py-2 rounded-md text-sm font-medium">
@@ -13,58 +13,169 @@
 {% endblock %}
 
 {% block content %}
-<div class="space-y-5">
-    <div id="scheduler-status">
-        {% include "scrapers/_scheduler_status.html" %}
-    </div>
+<div class="space-y-6">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div class="space-y-5 lg:col-span-1">
+            <div id="scheduler-status"
+                hx-get="/scheduler/status"
+                hx-trigger="every 5s"
+                hx-swap="innerHTML">
+                {% include "scrapers/_scheduler_status.html" %}
+            </div>
 
-    <div class="app-card overflow-hidden">
-        <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-            <div>
-                <h2 class="text-sm font-semibold text-white/90">Schedule Configuration</h2>
-                <p class="text-xs text-slate-400 mt-0.5">Toggle automation and adjust cadence.</p>
+            <div class="app-card p-5 space-y-4">
+                <div>
+                    <h3 class="text-sm font-semibold text-white">Bulk Controls</h3>
+                    <p class="text-xs text-slate-400 mt-0.5">Quickly enable/disable automation or set a common interval.</p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" id="enable-all"
+                        class="app-btn-secondary inline-flex items-center px-3 py-2 rounded-md text-sm font-semibold">
+                        Enable all
+                    </button>
+                    <button type="button" id="disable-all"
+                        class="app-btn-secondary inline-flex items-center px-3 py-2 rounded-md text-sm font-semibold">
+                        Disable all
+                    </button>
+                </div>
+                <div class="flex items-end gap-2">
+                    <div class="flex-1">
+                        <label for="bulk-interval" class="block text-[11px] uppercase tracking-widest text-slate-400">Interval (minutes)</label>
+                        <input id="bulk-interval" type="number" min="1" max="10080" value="60"
+                            class="mt-1 w-full app-input rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/60">
+                    </div>
+                    <button type="button" id="apply-interval"
+                        class="app-btn-secondary inline-flex items-center px-3 py-2 rounded-md text-sm font-semibold">
+                        Apply
+                    </button>
+                </div>
+                <p class="text-xs text-slate-500">Schedules are checked every 60 seconds by the scheduler.</p>
             </div>
         </div>
-        <form action="/scrapers/schedules/save-all" method="POST">
-            <table class="min-w-full divide-y divide-white/10 text-sm">
-                <thead class="bg-white/5">
-                    <tr>
-                        <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                            Scraper
-                        </th>
-                        <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                            Enabled
-                        </th>
-                        <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                            Interval (minutes)
-                        </th>
-                        <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                            Last Run
-                        </th>
-                        <th scope="col" class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                            Next Run
-                        </th>
-                    </tr>
-                </thead>
-                <tbody id="schedules-tbody" class="divide-y divide-white/5">
+
+        <div class="lg:col-span-2">
+            <form action="/scrapers/schedules/save-all" method="POST" id="schedules-form" class="space-y-4">
+                <div class="flex items-center justify-between px-1">
+                    <div>
+                        <h2 class="text-sm font-semibold text-white/90">Per‑scraper schedules</h2>
+                        <p class="text-xs text-slate-400 mt-0.5">Toggle automation and adjust cadence for each source.</p>
+                    </div>
+                    <div class="text-xs text-slate-400">{{ scrapers|length }} scrapers</div>
+                </div>
+
+                <div id="schedules-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {% for scraper in scrapers %}
                     {% include "scrapers/_schedule_row.html" %}
                     {% endfor %}
-                </tbody>
-            </table>
+                </div>
 
-            <div class="px-6 py-4 bg-white/5 border-t border-white/10">
-                <button type="submit"
-                    class="app-btn inline-flex items-center px-4 py-2 rounded-md text-sm font-semibold">
-                    Save All Schedules
-                </button>
-            </div>
-        </form>
-    </div>
-
-    <div class="app-card p-4 text-sm text-slate-300/90">
-        <p><span class="font-semibold text-white">Note:</span> The scheduler must be running for automatic scrapes to occur.</p>
-        <p class="mt-1 text-xs text-slate-500">Schedules are checked every 60 seconds. Scrapers will run when their next_run time has passed.</p>
+                <div id="save-bar" class="sticky bottom-0 z-10 app-card p-4 flex items-center justify-between bg-surface/80 backdrop-blur">
+                    <div class="text-sm text-slate-300">
+                        <span id="unsaved-count">0</span> unsaved change<span id="unsaved-plural">s</span>
+                    </div>
+                    <button type="submit" id="save-btn"
+                        class="app-btn inline-flex items-center px-4 py-2 rounded-md text-sm font-semibold opacity-60 cursor-not-allowed"
+                        disabled>
+                        Save schedules
+                    </button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (function() {
+        const form = document.getElementById("schedules-form");
+        if (!form) return;
+
+        const enableAll = document.getElementById("enable-all");
+        const disableAll = document.getElementById("disable-all");
+        const bulkInterval = document.getElementById("bulk-interval");
+        const applyInterval = document.getElementById("apply-interval");
+        const saveBtn = document.getElementById("save-btn");
+        const unsavedCount = document.getElementById("unsaved-count");
+        const unsavedPlural = document.getElementById("unsaved-plural");
+
+        const cards = Array.from(form.querySelectorAll("[data-schedule-card]"));
+
+        function snapshot(card) {
+            const enabledInput = card.querySelector("input[type=checkbox]");
+            const intervalInput = card.querySelector("input[type=number]");
+            return {
+                enabled: enabledInput ? enabledInput.checked : false,
+                interval: intervalInput ? intervalInput.value : "",
+            };
+        }
+
+        cards.forEach(card => {
+            const snap = snapshot(card);
+            card.dataset.defaultEnabled = snap.enabled ? "1" : "0";
+            card.dataset.defaultInterval = snap.interval;
+        });
+
+        function updateUnsaved() {
+            let changed = 0;
+            cards.forEach(card => {
+                const enabledInput = card.querySelector("input[type=checkbox]");
+                const intervalInput = card.querySelector("input[type=number]");
+                const enabledNow = enabledInput && enabledInput.checked ? "1" : "0";
+                const intervalNow = intervalInput ? intervalInput.value : "";
+                if (enabledInput) {
+                    if (enabledInput.checked) {
+                        card.classList.add("ring-1", "ring-brand/25");
+                    } else {
+                        card.classList.remove("ring-1", "ring-brand/25");
+                    }
+                }
+                const diff = enabledNow !== card.dataset.defaultEnabled || intervalNow !== card.dataset.defaultInterval;
+                card.dataset.changed = diff ? "1" : "0";
+                if (diff) changed += 1;
+            });
+
+            unsavedCount.textContent = changed;
+            unsavedPlural.textContent = changed === 1 ? "" : "s";
+
+            if (changed > 0) {
+                saveBtn.disabled = false;
+                saveBtn.classList.remove("opacity-60", "cursor-not-allowed");
+            } else {
+                saveBtn.disabled = true;
+                saveBtn.classList.add("opacity-60", "cursor-not-allowed");
+            }
+        }
+
+        form.addEventListener("input", updateUnsaved);
+
+        enableAll.addEventListener("click", () => {
+            cards.forEach(card => {
+                const enabledInput = card.querySelector("input[type=checkbox]");
+                if (enabledInput) enabledInput.checked = true;
+            });
+            updateUnsaved();
+        });
+
+        disableAll.addEventListener("click", () => {
+            cards.forEach(card => {
+                const enabledInput = card.querySelector("input[type=checkbox]");
+                if (enabledInput) enabledInput.checked = false;
+            });
+            updateUnsaved();
+        });
+
+        applyInterval.addEventListener("click", () => {
+            const val = bulkInterval.value;
+            if (!val) return;
+            cards.forEach(card => {
+                const intervalInput = card.querySelector("input[type=number]");
+                if (intervalInput) intervalInput.value = val;
+            });
+            updateUnsaved();
+        });
+
+        updateUnsaved();
+    })();
+</script>
 {% endblock %}

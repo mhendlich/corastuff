@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+
+{% block title %}Amazon Pricing - Blackroll Scraper{% endblock %}
+
+{% block page_title %}Amazon Pricing{% endblock %}
+{% block page_subtitle %}
+<p class="mt-1 text-sm text-slate-400">Compare Amazon storefront prices vs retailers for canonicals already linked to Amazon</p>
+{% endblock %}
+
+{% block page_actions %}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Summary KPIs -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="app-card p-4">
+            <div class="text-xs text-slate-400 uppercase tracking-wide">Undercut now</div>
+            <div class="mt-1 text-2xl font-bold text-red-300">{{ summary.undercut_count }}</div>
+            <div class="mt-1 text-xs text-slate-500">
+                Total gap: {{ "%.2f"|format(summary.total_overprice or 0) }} EUR
+            </div>
+        </div>
+        <div class="app-card p-4">
+            <div class="text-xs text-slate-400 uppercase tracking-wide">Raise now</div>
+            <div class="mt-1 text-2xl font-bold text-emerald-300">{{ summary.raise_count }}</div>
+            <div class="mt-1 text-xs text-slate-500">
+                Potential gain: {{ "%.2f"|format(summary.total_potential_gain or 0) }} EUR
+            </div>
+        </div>
+        <div class="app-card p-4">
+            <div class="text-xs text-slate-400 uppercase tracking-wide">Watching</div>
+            <div class="mt-1 text-2xl font-bold text-white">{{ summary.watch_count }}</div>
+            <div class="mt-1 text-xs text-slate-500">
+                Within tolerance
+            </div>
+        </div>
+	        <div class="app-card p-4">
+	            <div class="text-xs text-slate-400 uppercase tracking-wide">Missing data</div>
+	            <div class="mt-1 text-2xl font-bold text-white">{{ summary.missing_data_count }}</div>
+	            <div class="mt-1 text-xs text-slate-500">
+	                No retailer or Amazon price yet
+	            </div>
+	        </div>
+	    </div>
+
+    {% if items %}
+        {% if undercut %}
+        <section class="app-card overflow-hidden">
+            <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+                <div>
+                    <h2 class="text-sm font-semibold tracking-wide text-white/90">Undercut Opportunities</h2>
+                    <p class="text-xs text-slate-400 mt-0.5">Retailers are cheaper than your Amazon price</p>
+                </div>
+                <div class="text-xs text-slate-400">{{ undercut|length }} items</div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-white/10 text-sm">
+                    <thead class="bg-white/5">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase">Canonical</th>
+                            <th class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase">Amazon Price</th>
+                            <th class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase">Cheapest Retailer</th>
+                            <th class="px-6 py-3 text-right text-[11px] font-semibold text-slate-400 uppercase">Gap</th>
+                            <th class="px-6 py-3 text-right text-[11px] font-semibold text-slate-400 uppercase">Suggested</th>
+                            <th class="px-6 py-3 text-right text-[11px] font-semibold text-slate-400 uppercase">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-white/5">
+                        {% for it in undercut %}
+                        {% set amz = it.primary_amazon %}
+                        {% set comp = it.competitor_min %}
+                        <tr class="hover:bg-white/5">
+                            <td class="px-6 py-4">
+                                <div class="font-medium text-white">{{ it.canonical_name }}</div>
+                                <div class="text-xs text-slate-500">{{ it.competitor_count }} retailers tracked</div>
+                            </td>
+                            <td class="px-6 py-4">
+                                <div class="font-semibold text-white">
+                                    {{ "%.2f"|format(it.own_price) }} {{ it.own_currency or 'EUR' }}
+                                </div>
+                                {% if amz and amz.url %}
+                                <a href="{{ amz.url }}" target="_blank" class="text-xs text-slate-400 hover:text-slate-200">ASIN {{ amz.source_item_id or amz.item_id }}</a>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4">
+                                <div class="font-semibold text-white">
+                                    {{ "%.2f"|format(comp.price) }} {{ comp.currency or it.own_currency or 'EUR' }}
+                                </div>
+                                <div class="text-xs text-slate-400">
+                                    {{ source_display_names.get(comp.source, comp.source) }}
+                                    {% if comp.url %}
+                                    · <a href="{{ comp.url }}" target="_blank" class="hover:text-slate-200">open</a>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                <div class="text-red-300 font-semibold">
+                                    +{{ "%.2f"|format(it.delta_abs) }}
+                                </div>
+                                <div class="text-xs text-slate-500">
+                                    {{ "%.1f"|format(it.delta_pct or 0) }}%
+                                </div>
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                <div class="font-semibold text-white">
+                                    {{ "%.2f"|format(it.suggested_price) }} {{ it.own_currency or 'EUR' }}
+                                </div>
+                                <div class="text-xs text-slate-500">{{ it.suggested_reason }}</div>
+                            </td>
+                            <td class="px-6 py-4 text-right whitespace-nowrap">
+                                <a href="/prices/canonical/{{ it.canonical_id }}" class="text-brand-cyan hover:text-white text-xs">History</a>
+                                {% if amz and amz.url %}
+                                <a href="{{ amz.url }}" target="_blank" class="text-slate-400 hover:text-slate-200 text-xs ml-2">Amazon</a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        {% endif %}
+
+        {% if raise_ops %}
+        <section class="app-card overflow-hidden">
+            <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+                <div>
+                    <h2 class="text-sm font-semibold tracking-wide text-white/90">Raise Opportunities</h2>
+                    <p class="text-xs text-slate-400 mt-0.5">Retailers are higher; you can raise without losing competitiveness</p>
+                </div>
+                <div class="text-xs text-slate-400">{{ raise_ops|length }} items</div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-white/10 text-sm">
+                    <thead class="bg-white/5">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase">Canonical</th>
+                            <th class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase">Amazon Price</th>
+                            <th class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase">Lowest Retailer</th>
+                            <th class="px-6 py-3 text-right text-[11px] font-semibold text-slate-400 uppercase">Headroom</th>
+                            <th class="px-6 py-3 text-right text-[11px] font-semibold text-slate-400 uppercase">Suggested</th>
+                            <th class="px-6 py-3 text-right text-[11px] font-semibold text-slate-400 uppercase">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-white/5">
+                        {% for it in raise_ops %}
+                        {% set amz = it.primary_amazon %}
+                        {% set comp = it.competitor_min %}
+                        <tr class="hover:bg-white/5">
+                            <td class="px-6 py-4">
+                                <div class="font-medium text-white">{{ it.canonical_name }}</div>
+                                <div class="text-xs text-slate-500">{{ it.competitor_count }} retailers tracked</div>
+                            </td>
+                            <td class="px-6 py-4">
+                                <div class="font-semibold text-white">
+                                    {{ "%.2f"|format(it.own_price) }} {{ it.own_currency or 'EUR' }}
+                                </div>
+                                {% if amz and amz.url %}
+                                <a href="{{ amz.url }}" target="_blank" class="text-xs text-slate-400 hover:text-slate-200">ASIN {{ amz.source_item_id or amz.item_id }}</a>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4">
+                                <div class="font-semibold text-white">
+                                    {{ "%.2f"|format(comp.price) }} {{ comp.currency or it.own_currency or 'EUR' }}
+                                </div>
+                                <div class="text-xs text-slate-400">
+                                    {{ source_display_names.get(comp.source, comp.source) }}
+                                </div>
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                <div class="text-emerald-300 font-semibold">
+                                    {{ "%.2f"|format((-1 * it.delta_abs)) }}
+                                </div>
+                                <div class="text-xs text-slate-500">
+                                    {{ "%.1f"|format((it.delta_pct or 0)|abs) }}%
+                                </div>
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                <div class="font-semibold text-white">
+                                    {{ "%.2f"|format(it.suggested_price) }} {{ it.own_currency or 'EUR' }}
+                                </div>
+                                <div class="text-xs text-slate-500">{{ it.suggested_reason }}</div>
+                            </td>
+                            <td class="px-6 py-4 text-right whitespace-nowrap">
+                                <a href="/prices/canonical/{{ it.canonical_id }}" class="text-brand-cyan hover:text-white text-xs">History</a>
+                                {% if amz and amz.url %}
+                                <a href="{{ amz.url }}" target="_blank" class="text-slate-400 hover:text-slate-200 text-xs ml-2">Amazon</a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        {% endif %}
+
+        <section class="app-card overflow-hidden">
+            <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+                <div>
+                    <h2 class="text-sm font-semibold tracking-wide text-white/90">All Tracked Amazon Products</h2>
+                    <p class="text-xs text-slate-400 mt-0.5">Including watch items and gaps</p>
+                </div>
+                <div class="text-xs text-slate-400">{{ items|length }} canonicals</div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-white/10 text-sm">
+                    <thead class="bg-white/5">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase">Canonical</th>
+                            <th class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase">Status</th>
+                            <th class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase">Amazon</th>
+                            <th class="px-6 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase">Retailer Min</th>
+                            <th class="px-6 py-3 text-right text-[11px] font-semibold text-slate-400 uppercase">Suggested</th>
+                            <th class="px-6 py-3 text-right text-[11px] font-semibold text-slate-400 uppercase">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-white/5">
+                        {% for it in items %}
+                        {% set amz = it.primary_amazon %}
+                        {% set comp = it.competitor_min %}
+                        <tr class="hover:bg-white/5">
+                            <td class="px-6 py-4">
+                                <div class="font-medium text-white">{{ it.canonical_name }}</div>
+                            </td>
+                            <td class="px-6 py-4">
+                                {% if it.action == 'undercut' %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-500/15 text-red-300 border border-red-500/30">Undercut</span>
+                                {% elif it.action == 'raise' %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Raise</span>
+                                {% elif it.action == 'watch' %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-white/5 text-slate-200 border border-white/10">Watch</span>
+                                {% elif it.action == 'missing_amazon' %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-500/15 text-amber-200 border border-amber-500/30">Missing Amazon</span>
+                                {% elif it.action == 'missing_own_price' %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-500/15 text-amber-200 border border-amber-500/30">No Amazon price</span>
+                                {% else %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-white/5 text-slate-200 border border-white/10">Missing retailers</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4">
+                                {% if it.own_price is not none %}
+                                <div class="font-semibold text-white">{{ "%.2f"|format(it.own_price) }} {{ it.own_currency or 'EUR' }}</div>
+                                {% else %}
+                                <div class="text-slate-500">-</div>
+                                {% endif %}
+                                {% if amz and amz.url %}
+                                <a href="{{ amz.url }}" target="_blank" class="text-xs text-slate-400 hover:text-slate-200">ASIN {{ amz.source_item_id or amz.item_id }}</a>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4">
+                                {% if comp %}
+                                <div class="font-semibold text-white">{{ "%.2f"|format(comp.price) }} {{ comp.currency or it.own_currency or 'EUR' }}</div>
+                                <div class="text-xs text-slate-400">{{ source_display_names.get(comp.source, comp.source) }}</div>
+                                {% else %}
+                                <div class="text-slate-500">-</div>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                {% if it.suggested_price is not none %}
+                                <div class="font-semibold text-white">{{ "%.2f"|format(it.suggested_price) }} {{ it.own_currency or 'EUR' }}</div>
+                                <div class="text-xs text-slate-500">{{ it.suggested_reason }}</div>
+                                {% else %}
+                                <div class="text-slate-500">-</div>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4 text-right whitespace-nowrap">
+                                <a href="/prices/canonical/{{ it.canonical_id }}" class="text-brand-cyan hover:text-white text-xs">History</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+	    {% else %}
+	        <div class="app-card p-8 text-center text-slate-400">
+	            No Amazon-linked canonicals yet. Run the Amazon scraper and link products to canonicals to start tracking.
+	        </div>
+	    {% endif %}
+	</div>
+{% endblock %}

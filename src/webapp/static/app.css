@@ -126,6 +126,11 @@
     }
 }
 
+.scraper-card-title {
+    color: #f8fafc !important;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6);
+}
+
 ::-webkit-scrollbar {
     width: 10px;
     height: 10px;

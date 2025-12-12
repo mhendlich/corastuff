@@ -19,6 +19,7 @@ def parse_price(price_text: str | None) -> tuple[float | None, str | None]:
 
     Handles formats like:
     - "27,56 €"
+    - "1.299,00 €"
     - "ab 139,60 €"
     - "19.95 CHF"
     """
@@ -38,12 +39,35 @@ def parse_price(price_text: str | None) -> tuple[float | None, str | None]:
     # Remove common prefixes
     text = re.sub(r"^(ab|from|uvp|statt)\s+", "", text.strip())
 
-    # Extract number: handle both "27,56" and "27.56" formats
-    if match := re.search(r"(\d+)[.,](\d+)", text):
-        return float(f"{match.group(1)}.{match.group(2)}"), currency
+    # Extract numeric chunk and normalize thousands/decimal separators.
+    if not (match := re.search(r"[\d][\d\s.,]*", text)):
+        return None, currency
 
-    # Try integer
-    if match := re.search(r"(\d+)", text):
-        return float(match.group(1)), currency
+    num = match.group(0).replace(" ", "").replace("\xa0", "")
 
-    return None, currency
+    last_comma = num.rfind(",")
+    last_dot = num.rfind(".")
+
+    if last_comma != -1 and last_dot != -1:
+        # Assume last separator is decimal; the other is thousands.
+        if last_comma > last_dot:
+            num = num.replace(".", "").replace(",", ".")
+        else:
+            num = num.replace(",", "")
+    elif last_comma != -1:
+        digits_after = len(num) - last_comma - 1
+        if 1 <= digits_after <= 2:
+            num = num.replace(".", "").replace(",", ".")
+        else:
+            num = num.replace(",", "")
+    elif last_dot != -1:
+        digits_after = len(num) - last_dot - 1
+        if 1 <= digits_after <= 2:
+            num = num.replace(",", "")
+        else:
+            num = num.replace(".", "")
+
+    try:
+        return float(num), currency
+    except ValueError:
+        return None, currency

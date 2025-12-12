@@ -95,6 +95,12 @@
                     </svg>
                     <span class="nav-label">Prices</span>
                 </a>
+                <a href="/amazon-pricing" class="app-nav-item {% if '/amazon-pricing' in request.url.path %}active{% endif %}">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3l7 4v6c0 5-3.5 7.5-7 9-3.5-1.5-7-4-7-9V7l7-4z"></path>
+                    </svg>
+                    <span class="nav-label">Amazon Pricing</span>
+                </a>
                 <a href="/scrapers" class="app-nav-item {% if request.url.path.startswith('/scrapers') %}active{% endif %}">
                     <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>

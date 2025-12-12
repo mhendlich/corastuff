@@ -7,11 +7,15 @@ import logging
 import signal
 import uuid
 from time import perf_counter
+from datetime import datetime, UTC
+from collections import defaultdict
 
 from .db import ProductDatabase
 from .job_queue import JobQueue
 from .scrapers import get_scraper
 from .scrapers.browser_pool import BrowserPool
+from .scrapers.amazon import scrape_amazon_listing
+from .models import ScrapeResult
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +136,74 @@ class Worker:
 
             # Save results to database
             self.db.save_results(result)
+
+            # Auto-link Amazon storefront products to canonicals (high confidence only).
+            if scraper_name.startswith("amazon"):
+                try:
+                    actions = self.db.auto_link_source_products(result.source, min_score=0.8)
+                    if actions:
+                        logger.info(
+                            f"Auto-linked {len(actions)} {result.source} products to canonicals"
+                        )
+                except Exception as link_err:
+                    logger.warning(f"Amazon auto-linking failed: {link_err}")
+
+                # Also refresh any tracked ASINs that are not currently visible in the storefront scrape.
+                try:
+                    scraped_asins = {p.item_id for p in result.products if p.item_id}
+                    tracked_links = self.db.get_tracked_amazon_links()
+
+                    asins_by_source: dict[str, set[str]] = defaultdict(set)
+                    sources_by_asin: dict[str, set[str]] = defaultdict(set)
+                    for link in tracked_links:
+                        asin = link.get("asin")
+                        src = link.get("source")
+                        if not asin or not src:
+                            continue
+                        asins_by_source[src].add(asin)
+                        sources_by_asin[asin].add(src)
+
+                    to_refresh_asins: set[str] = set()
+                    # Legacy manual links stored under "amazon" need per-ASIN refresh every run.
+                    to_refresh_asins |= asins_by_source.get("amazon", set())
+                    # Refresh tracked ASINs for the storefront source that weren't found in the listing scrape.
+                    to_refresh_asins |= asins_by_source.get(result.source, set()) - scraped_asins
+
+                    missing_asins = sorted(to_refresh_asins)
+
+                    if missing_asins:
+                        logger.info(
+                            f"Refreshing {len(missing_asins)} tracked Amazon ASINs not found in storefront"
+                        )
+
+                    for asin in missing_asins[:50]:
+                        prod = await scrape_amazon_listing(asin=asin)
+                        if not prod:
+                            continue
+                        for src in sources_by_asin.get(asin, {result.source}):
+                            # Avoid redundant save for storefront source if already updated there.
+                            if src == result.source and asin in scraped_asins and src != "amazon":
+                                continue
+                            self.db.save_results(
+                                ScrapeResult(
+                                    source=src,
+                                    source_url=prod.url or f"https://www.amazon.de/dp/{asin}",
+                                    scraped_at=datetime.now(UTC),
+                                    products=[
+                                        prod.__class__(
+                                            name=prod.name,
+                                            price=prod.price,
+                                            currency=prod.currency,
+                                            url=prod.url,
+                                            item_id=prod.item_id,
+                                            image=prod.image,
+                                            image_mime=prod.image_mime,
+                                        )
+                                    ],
+                                )
+                            )
+                except Exception as refresh_err:
+                    logger.warning(f"Amazon tracked-ASIN refresh failed: {refresh_err}")
 
             self.queue.complete(
                 job_id,
