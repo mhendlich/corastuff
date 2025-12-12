@@ -156,10 +156,25 @@
             <h2 class="text-sm font-semibold text-white/90">Data Source Scrapers</h2>
             <div class="text-xs text-slate-400">{{ scrapers|length }} total</div>
         </div>
-        <div id="scrapers-list" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {% for scraper in scrapers %}
-            {% include "scrapers/_row.html" %}
-            {% endfor %}
+        <div class="app-card overflow-hidden border border-white/10">
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                    <thead class="bg-white/5 text-slate-300 text-[11px] uppercase tracking-widest">
+                        <tr>
+                            <th class="px-3 py-2 text-left font-semibold">Scraper</th>
+                            <th class="px-3 py-2 text-left font-semibold">Status</th>
+                            <th class="px-3 py-2 text-left font-semibold">Last activity</th>
+                            <th class="px-3 py-2 text-left font-semibold">Products</th>
+                            <th class="px-3 py-2 text-right font-semibold">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scrapers-list" class="divide-y divide-white/10">
+                        {% for scraper in scrapers %}
+                        {% include "scrapers/_row.html" %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 

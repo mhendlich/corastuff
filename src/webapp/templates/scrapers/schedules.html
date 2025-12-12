@@ -63,10 +63,25 @@
                     <div class="text-xs text-slate-400">{{ scrapers|length }} scrapers</div>
                 </div>
 
-                <div id="schedules-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {% for scraper in scrapers %}
-                    {% include "scrapers/_schedule_row.html" %}
-                    {% endfor %}
+                <div class="app-card overflow-hidden border border-white/10">
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full text-sm">
+                            <thead class="bg-white/5 text-slate-300 text-[11px] uppercase tracking-widest">
+                                <tr>
+                                    <th class="px-3 py-2 text-left font-semibold">Scraper</th>
+                                    <th class="px-3 py-2 text-left font-semibold">Enabled</th>
+                                    <th class="px-3 py-2 text-left font-semibold">Interval</th>
+                                    <th class="px-3 py-2 text-left font-semibold">Last run</th>
+                                    <th class="px-3 py-2 text-left font-semibold">Next run</th>
+                                </tr>
+                            </thead>
+                            <tbody id="schedules-list" class="divide-y divide-white/10">
+                                {% for scraper in scrapers %}
+                                {% include "scrapers/_schedule_row.html" %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
                 <div id="save-bar" class="sticky bottom-0 z-10 app-card p-4 flex items-center justify-between bg-surface/80 backdrop-blur">
@@ -125,9 +140,9 @@
                 const intervalNow = intervalInput ? intervalInput.value : "";
                 if (enabledInput) {
                     if (enabledInput.checked) {
-                        card.classList.add("ring-1", "ring-brand/25");
+                        card.classList.add("bg-brand/5");
                     } else {
-                        card.classList.remove("ring-1", "ring-brand/25");
+                        card.classList.remove("bg-brand/5");
                     }
                 }
                 const diff = enabledNow !== card.dataset.defaultEnabled || intervalNow !== card.dataset.defaultInterval;

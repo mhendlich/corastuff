@@ -2,14 +2,13 @@
 {% set display_name = scraper.display_name or scraper.name %}
 {% set started_at_str = scraper.started_at|string %}
 
-<div id="scraper-{{ scraper.name }}"
+<tr id="scraper-{{ scraper.name }}"
     data-scraper-card
     {% if status == 'running' or status == 'pending' %}data-no-fade="1"{% endif %}
     data-scraper-name="{{ display_name }}"
     data-status="{{ status }}"
-    class="app-card app-card-hover p-5 flex flex-col gap-4
-        {% if status == 'failed' %}border-red-500/40{% elif status == 'pending' %}border-amber-500/30{% elif status == 'completed' %}border-emerald-500/30{% endif %}
-        {% if status == 'running' %}ring-1 ring-brand/40{% endif %}"
+    class="hover:bg-white/5 transition-colors
+        {% if status == 'failed' %}bg-red-500/5{% elif status == 'pending' %}bg-amber-500/5{% elif status == 'completed' %}bg-emerald-500/5{% endif %}"
     {% if status == 'running' or status == 'pending' %}
     hx-get="/scrapers/{{ scraper.name }}/status"
     hx-trigger="every 2s"
@@ -20,53 +19,78 @@
     hx-swap="outerHTML"
     {% endif %}>
 
-    <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0">
-            <div class="flex items-center gap-2 min-w-0">
-                <h3 class="scraper-card-title text-base font-semibold truncate text-white" style="color:#f8fafc;">{{ display_name }}</h3>
-                {% if status == 'pending' %}
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-200 border border-amber-500/30">
-                    <svg class="-ml-0.5 mr-1.5 h-3 w-3 text-amber-300" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path>
-                    </svg>
-                    Queued
-                </span>
-                {% elif status == 'running' %}
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-brand/20 text-brand-soft border border-brand/40">
-                    <svg class="animate-spin -ml-0.5 mr-1.5 h-3 w-3 text-brand-soft" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Running
-                </span>
-                {% elif status == 'completed' %}
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                    <svg class="-ml-0.5 mr-1.5 h-3 w-3 text-emerald-300" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
-                    </svg>
-                    Completed
-                </span>
-                {% elif status == 'failed' %}
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-red-500/15 text-red-200 border border-red-500/30" title="{{ scraper.error }}">
-                    <svg class="-ml-0.5 mr-1.5 h-3 w-3 text-red-200" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
-                    </svg>
-                    Failed
-                </span>
-                {% else %}
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-white/5 text-slate-200 border border-white/10">
-                    Idle
-                </span>
-                {% endif %}
-            </div>
-            <div class="mt-1 text-xs text-slate-400">
-                Key: <span class="font-mono text-slate-300">{{ scraper.name }}</span>
-            </div>
+    <td class="px-3 py-1.5 align-top">
+        <div class="flex items-baseline gap-2 min-w-0 max-w-[520px]">
+            <div class="font-semibold text-white/90 leading-5 truncate">{{ display_name }}</div>
+            <div class="text-[11px] text-slate-400 leading-4 font-mono truncate">({{ scraper.name }})</div>
         </div>
+    </td>
 
-        <div class="flex items-center gap-2 shrink-0">
+    <td class="px-3 py-1.5 align-top">
+        {% if status == 'pending' %}
+        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-200 border border-amber-500/30">
+            <svg class="-ml-0.5 mr-1.5 h-3 w-3 text-amber-300" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path>
+            </svg>
+            Queued
+        </span>
+        {% elif status == 'running' %}
+        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-brand/20 text-brand-soft border border-brand/40">
+            <svg class="animate-spin -ml-0.5 mr-1.5 h-3 w-3 text-brand-soft" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Running
+        </span>
+        {% elif status == 'completed' %}
+        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+            <svg class="-ml-0.5 mr-1.5 h-3 w-3 text-emerald-300" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+            </svg>
+            Completed
+        </span>
+        {% elif status == 'failed' %}
+        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-500/15 text-red-200 border border-red-500/30" title="{{ scraper.error }}">
+            <svg class="-ml-0.5 mr-1.5 h-3 w-3 text-red-200" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+            </svg>
+            Failed
+        </span>
+        {% else %}
+        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-white/5 text-slate-200 border border-white/10">
+            Idle
+        </span>
+        {% endif %}
+    </td>
+
+    <td class="px-3 py-1.5 align-top text-slate-200/90 whitespace-nowrap">
+        {% if status == 'running' and scraper.started_at %}
+        <span class="font-mono text-xs text-slate-200">{{ started_at_str[:19].replace('T', ' ') }}</span>
+        {% elif status == 'pending' %}
+        <span class="text-slate-300 text-xs">Waiting for worker</span>
+        {% else %}
+        {% if scraper.last_run %}
+        <span class="font-mono text-xs text-slate-200">{{ scraper.last_run[:16].replace('T', ' ') }}</span>
+        {% else %}
+        <span class="text-slate-400 text-xs">Never</span>
+        {% endif %}
+    {% endif %}
+    </td>
+
+    <td class="px-3 py-1.5 align-top whitespace-nowrap">
+        {% if status == 'completed' and scraper.products_found is not none %}
+        <span class="text-emerald-300 font-semibold">{{ scraper.products_found }}</span>
+        {% elif scraper.last_count %}
+        <span class="text-slate-200">{{ scraper.last_count }}</span>
+        {% else %}
+        <span class="text-slate-400">-</span>
+        {% endif %}
+    </td>
+
+    <td class="px-3 py-1.5 align-top">
+        <div class="flex items-center justify-end gap-2 whitespace-nowrap">
             <a href="/scrapers/history?scraper={{ scraper.name }}"
-                class="app-btn-secondary inline-flex items-center px-2.5 py-1.5 rounded-md text-xs font-semibold">
+                class="app-btn-secondary inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold">
                 History
             </a>
             <button
@@ -74,7 +98,7 @@
                 hx-target="#scraper-{{ scraper.name }}"
                 hx-swap="outerHTML"
                 {% if status == 'running' or status == 'pending' %}disabled{% endif %}
-                class="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-semibold {% if status == 'running' or status == 'pending' %}bg-white/10 text-slate-400 cursor-not-allowed border border-white/10{% else %}app-btn{% endif %}">
+                class="inline-flex items-center px-3 py-1 rounded-md text-xs font-semibold {% if status == 'running' or status == 'pending' %}bg-white/10 text-slate-400 cursor-not-allowed border border-white/10{% else %}app-btn{% endif %}">
                 {% if status == 'running' %}
                 Running…
                 {% elif status == 'pending' %}
@@ -84,45 +108,5 @@
                 {% endif %}
             </button>
         </div>
-    </div>
-
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-        <div class="rounded-lg bg-white/5 border border-white/10 p-3">
-            <div class="text-[11px] uppercase tracking-widest text-slate-400">Last run</div>
-            <div class="mt-1 text-slate-200">
-                {% if scraper.last_run %}
-                {{ scraper.last_run[:16].replace('T', ' ') }}
-                {% else %}
-                Never
-                {% endif %}
-            </div>
-        </div>
-        <div class="rounded-lg bg-white/5 border border-white/10 p-3">
-            {% if status == 'running' and scraper.started_at %}
-            <div class="text-[11px] uppercase tracking-widest text-slate-400">Started</div>
-            <div class="mt-1 text-slate-200">{{ started_at_str[:19].replace('T', ' ') }}</div>
-            {% elif status == 'pending' %}
-            <div class="text-[11px] uppercase tracking-widest text-slate-400">Queue</div>
-            <div class="mt-1 text-slate-200">Waiting for worker</div>
-            {% else %}
-            <div class="text-[11px] uppercase tracking-widest text-slate-400">Products</div>
-            <div class="mt-1 text-slate-200">
-                {% if status == 'completed' and scraper.products_found is not none %}
-                <span class="text-emerald-300 font-semibold">{{ scraper.products_found }}</span> found
-                {% elif scraper.last_count %}
-                {{ scraper.last_count }}
-                {% else %}
-                -
-                {% endif %}
-            </div>
-            {% endif %}
-        </div>
-    </div>
-
-    {% if status == 'failed' and scraper.error %}
-    <div class="rounded-lg bg-red-500/10 border border-red-500/30 p-3 text-sm text-red-100/90">
-        <div class="text-[11px] uppercase tracking-widest text-red-200">Error</div>
-        <div class="mt-1 truncate" title="{{ scraper.error }}">{{ scraper.error }}</div>
-    </div>
-    {% endif %}
-</div>
+    </td>
+</tr>
