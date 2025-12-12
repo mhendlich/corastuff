@@ -17,3 +17,6 @@ ipython>=8.30.0
 
 # Image processing
 pillow>=11.0.0
+
+# Scraper builder validation
+pytest>=8.0.0

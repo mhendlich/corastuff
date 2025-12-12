@@ -76,7 +76,7 @@ Testing (required):
   - at least one product saved
   - at least one product has `image_data`
   - the image is decodable via PIL and has reasonable dimensions (>30x30)
-- Run: `python -m pytest -q tests/test_<scraper_name>_live.py`
+- Run: `python3 -m pytest -q tests/test_<scraper_name>_live.py`
 
 If you cannot make the test pass reliably:
 - Revert any partial work you added for this scraper (remove new files/registry entries) and explain why.
@@ -156,10 +156,9 @@ def main() -> int:
     try:
         codex_bin = find_codex_bin()
         codex_dir = str(Path(codex_bin).resolve().parent)
-        current_path = os.environ.get("PATH", "")
-        path_parts = [p for p in current_path.split(":") if p]
-        if codex_dir not in path_parts:
-            os.environ["PATH"] = f"{codex_dir}:{current_path}" if current_path else codex_dir
+        base_env = dict(os.environ)
+        current_path = base_env.get("PATH", "")
+        base_env["PATH"] = f"{codex_dir}:{current_path}" if current_path else codex_dir
 
         write_job_status(job_id, {"phase": "copy", "workdir": str(workdir)})
         _safe_rmtree(workdir)
@@ -178,6 +177,18 @@ def main() -> int:
         ]
         _rsync_dir(REPO_ROOT, workdir, delete=True, excludes=excludes)
 
+        # Ensure the codex-run shell can invoke `python`/`python3` and has pytest available.
+        shim_dir = workdir / ".scraper_builder_shims"
+        shim_dir.mkdir(parents=True, exist_ok=True)
+        python_shim = shim_dir / "python"
+        python3_shim = shim_dir / "python3"
+        shim_payload = f"#!/usr/bin/env sh\nexec {sys.executable} \"$@\"\n"
+        python_shim.write_text(shim_payload, encoding="utf-8")
+        python3_shim.write_text(shim_payload, encoding="utf-8")
+        os.chmod(python_shim, 0o755)
+        os.chmod(python3_shim, 0o755)
+        base_env["PATH"] = f"{shim_dir}:{base_env.get('PATH','')}"
+
         before_scrapers = _get_scrapers(cwd=workdir)
         write_job_status(job_id, {"phase": "codex", "scrapers_before": sorted(before_scrapers)})
 
@@ -189,6 +200,7 @@ def main() -> int:
             cwd=workdir,
             text=True,
             input=prompt,
+            env=base_env,
         )
         write_job_status(job_id, {"codex_exit_code": codex_proc.returncode})
         if codex_proc.returncode != 0:

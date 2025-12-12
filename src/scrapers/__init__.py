@@ -1,14 +1,17 @@
-"""Scraper registry - add new scrapers here."""
+"""Scraper registry.
+
+Scrapers are auto-discovered from modules in this package. Any `BaseScraper`
+subclass with a non-empty `name` attribute will be registered.
+"""
+
+from __future__ import annotations
+
+import importlib
+import inspect
+import logging
+import pkgutil
 
 from .base import BaseScraper
-from .amazon import AmazonDEScraper
-from .bergzeit import BergzeitScraper
-from .galaxus import GalaxusCHScraper, GalaxusDEScraper
-from .kaufland import KauflandScraper
-from .manor import ManorScraper
-from .sportscheck import SportscheckScraper
-from .transa import TransaScraper
-from .upswing import UpswingScraper
 
 __all__ = [
     "BaseScraper",
@@ -18,17 +21,54 @@ __all__ = [
     "get_scraper_display_name",
 ]
 
-SCRAPERS: dict[str, type[BaseScraper]] = {
-    "bergzeit": BergzeitScraper,
-    "sportscheck": SportscheckScraper,
-    "galaxus_ch": GalaxusCHScraper,
-    "galaxus_de": GalaxusDEScraper,
-    "kaufland": KauflandScraper,
-    "amazon_de": AmazonDEScraper,
-    "manor": ManorScraper,
-    "transa": TransaScraper,
-    "upswing": UpswingScraper,
-}
+logger = logging.getLogger(__name__)
+
+
+def _discover_scrapers() -> dict[str, type[BaseScraper]]:
+    discovered: dict[str, type[BaseScraper]] = {}
+    failures: dict[str, Exception] = {}
+
+    # Walk sibling modules under this package (src.scrapers.*).
+    for module_info in pkgutil.iter_modules(__path__):  # type: ignore[name-defined]
+        if module_info.ispkg:
+            continue
+        module_name = module_info.name
+        if module_name.startswith("_") or module_name in {"base", "browser_pool"}:
+            continue
+
+        full_name = f"{__name__}.{module_name}"
+        try:
+            module = importlib.import_module(full_name)
+        except Exception as exc:  # pragma: no cover - depends on optional modules
+            failures[full_name] = exc
+            continue
+
+        for _, obj in inspect.getmembers(module, inspect.isclass):
+            if obj is BaseScraper or not issubclass(obj, BaseScraper):
+                continue
+            scraper_name = getattr(obj, "name", None)
+            if not isinstance(scraper_name, str) or not scraper_name.strip():
+                continue
+
+            if scraper_name in discovered and discovered[scraper_name] is not obj:
+                logger.warning(
+                    "Duplicate scraper name '%s': %s.%s and %s.%s (keeping first)",
+                    scraper_name,
+                    discovered[scraper_name].__module__,
+                    discovered[scraper_name].__name__,
+                    obj.__module__,
+                    obj.__name__,
+                )
+                continue
+            discovered[scraper_name] = obj
+
+    for mod, exc in failures.items():
+        logger.warning("Failed to import scraper module %s: %r", mod, exc)
+
+    return dict(sorted(discovered.items(), key=lambda kv: kv[0]))
+
+
+SCRAPERS: dict[str, type[BaseScraper]] = _discover_scrapers()
 
 SCRAPER_DISPLAY_NAMES: dict[str, str] = {
     key: getattr(cls, "display_name", key.replace("_", " ").title())
