@@ -80,9 +80,17 @@ class Worker:
                 # Clean up completed tasks
                 self._cleanup_finished_tasks()
 
+                configured_limit = self.db.get_scraper_concurrency_limit(
+                    default=self.max_concurrent_jobs
+                )
+                effective_limit = max(1, configured_limit)
+
                 # Check if we can take more jobs
-                if len(self._running_jobs) < self.max_concurrent_jobs:
-                    job = self.queue.claim_next(self.worker_id)
+                if len(self._running_jobs) < effective_limit:
+                    job = self.queue.claim_next(
+                        self.worker_id,
+                        max_running_jobs=effective_limit,
+                    )
 
                     if job:
                         # Start job in background task
@@ -249,12 +257,15 @@ class Worker:
 
     def get_status(self) -> dict:
         """Get current worker status."""
+        configured_limit = self.db.get_scraper_concurrency_limit(
+            default=self.max_concurrent_jobs
+        )
         return {
             "worker_id": self.worker_id,
             "running": self._running,
             "running_jobs": list(self._running_jobs.keys()),
             "running_job_count": len(self._running_jobs),
-            "max_concurrent_jobs": self.max_concurrent_jobs,
+            "max_concurrent_jobs": max(1, configured_limit),
             "queue_status": self.queue.get_queue_status(),
         }
 

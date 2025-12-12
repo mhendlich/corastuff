@@ -21,6 +21,8 @@ from .models import Product, ScrapeResult
 class ProductDatabase:
     """SQLite database for storing scraped products with history."""
 
+    SCRAPER_CONCURRENCY_LIMIT_KEY = "scraper_concurrency_limit"
+
     def __init__(self, db_path: Path | None = None):
         self.db_path = db_path or Path(__file__).parent.parent / "output" / "products.db"
         self._init_db()
@@ -30,6 +32,14 @@ class ProductDatabase:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
+
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS products (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -188,6 +198,51 @@ class ProductDatabase:
             """)
 
             conn.commit()
+
+    def get_setting(self, key: str) -> str | None:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?",
+                (key,),
+            )
+            row = cursor.fetchone()
+            return row[0] if row else None
+
+    def set_setting(self, key: str, value: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO app_settings (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+                """,
+                (key, value, now),
+            )
+            conn.commit()
+
+    def get_int_setting(self, key: str, default: int) -> int:
+        raw = self.get_setting(key)
+        if raw is None:
+            return default
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return default
+
+    def set_int_setting(self, key: str, value: int) -> None:
+        self.set_setting(key, str(int(value)))
+
+    def get_scraper_concurrency_limit(self, default: int = 10) -> int:
+        limit = self.get_int_setting(self.SCRAPER_CONCURRENCY_LIMIT_KEY, default=default)
+        if limit < 1:
+            return 1
+        return limit
+
+    def set_scraper_concurrency_limit(self, limit: int) -> None:
+        if limit < 1:
+            raise ValueError("Concurrency limit must be >= 1")
+        self.set_int_setting(self.SCRAPER_CONCURRENCY_LIMIT_KEY, limit)
 
     def save_results(self, result: ScrapeResult):
         """Save scrape results to the database (append mode for history)."""
@@ -471,20 +526,192 @@ class ProductDatabase:
 
             cursor = conn.execute(
                 """
+                WITH latest AS (
+                    SELECT source, MAX(scraped_at) AS scraped_at
+                    FROM products
+                    GROUP BY source
+                )
                 SELECT p.*{image_select}
                 FROM products p
-                LEFT JOIN product_links pl ON p.source = pl.source AND p.item_id = pl.source_item_id
+                JOIN latest l ON l.source = p.source AND l.scraped_at = p.scraped_at
+                LEFT JOIN product_links pl
+                    ON p.source = pl.source
+                    AND (
+                        p.item_id = pl.source_item_id
+                        OR (p.item_id IS NULL AND pl.source_item_id IN ('', 'None'))
+                    )
                 LEFT JOIN product_images pi
                     ON pi.source = p.source
                     AND pi.product_key = COALESCE(p.product_key, p.item_id, p.url, p.name)
                 WHERE pl.id IS NULL
-                AND p.scraped_at = (
-                    SELECT MAX(p2.scraped_at) FROM products p2 WHERE p2.source = p.source
-                )
                 {where_source}
                 ORDER BY p.source, p.name
                 """.format(image_select=image_select, where_source=where_source),
                 params,
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_unlinked_source_counts(self) -> list[dict]:
+        """Get unlinked product counts per source (latest scrape only)."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                WITH latest AS (
+                    SELECT source, MAX(scraped_at) AS scraped_at
+                    FROM products
+                    GROUP BY source
+                )
+                SELECT
+                    p.source AS source,
+                    SUM(CASE WHEN pl.id IS NULL THEN 1 ELSE 0 END) AS unlinked_total,
+                    SUM(
+                        CASE
+                            WHEN pl.id IS NULL AND (p.item_id IS NULL OR p.item_id IN ('', 'None'))
+                            THEN 1
+                            ELSE 0
+                        END
+                    ) AS unlinked_missing_id
+                FROM products p
+                JOIN latest l ON l.source = p.source AND l.scraped_at = p.scraped_at
+                LEFT JOIN product_links pl
+                    ON p.source = pl.source
+                    AND (
+                        p.item_id = pl.source_item_id
+                        OR (p.item_id IS NULL AND pl.source_item_id IN ('', 'None'))
+                    )
+                GROUP BY p.source
+                ORDER BY p.source
+                """
+            )
+            rows = [dict(row) for row in cursor.fetchall()]
+            for row in rows:
+                row["unlinked_total"] = int(row.get("unlinked_total") or 0)
+                row["unlinked_missing_id"] = int(row.get("unlinked_missing_id") or 0)
+            return rows
+
+    def get_unlinked_products_page(
+        self,
+        sources: list[str] | None = None,
+        query: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        include_images: bool = False,
+    ) -> list[dict]:
+        """Get a paginated slice of unlinked products (latest scrape only)."""
+        image_select = (
+            ", pi.image_data, pi.image_mime, pi.image_hash, pi.updated_at as image_updated_at"
+            if include_images
+            else ", pi.image_hash, pi.image_mime, pi.updated_at as image_updated_at"
+        )
+        where_parts: list[str] = []
+        params: list[object] = []
+
+        if sources:
+            placeholders = ",".join("?" for _ in sources)
+            where_parts.append(f"p.source IN ({placeholders})")
+            params.extend(sources)
+
+        q = (query or "").strip().lower()
+        if q:
+            where_parts.append("(LOWER(p.name) LIKE ? OR LOWER(COALESCE(p.item_id, '')) LIKE ?)")
+            params.extend([f"%{q}%", f"%{q}%"])
+
+        where_clause = " AND " + " AND ".join(where_parts) if where_parts else ""
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                WITH latest AS (
+                    SELECT source, MAX(scraped_at) AS scraped_at
+                    FROM products
+                    GROUP BY source
+                )
+                SELECT p.*{image_select}
+                FROM products p
+                JOIN latest l ON l.source = p.source AND l.scraped_at = p.scraped_at
+                LEFT JOIN product_links pl
+                    ON p.source = pl.source
+                    AND (
+                        p.item_id = pl.source_item_id
+                        OR (p.item_id IS NULL AND pl.source_item_id IN ('', 'None'))
+                    )
+                LEFT JOIN product_images pi
+                    ON pi.source = p.source
+                    AND pi.product_key = COALESCE(p.product_key, p.item_id, p.url, p.name)
+                WHERE pl.id IS NULL
+                {where_clause}
+                ORDER BY p.source, p.name
+                LIMIT ? OFFSET ?
+                """.format(image_select=image_select, where_clause=where_clause),
+                [*params, int(limit), int(offset)],
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_unlinked_products_by_keys(self, keys: list[tuple[str, str]]) -> list[dict]:
+        """Fetch specific unlinked products by (source, source_item_id) (latest scrape only)."""
+        if not keys:
+            return []
+
+        where_parts: list[str] = []
+        params: list[object] = []
+        for source, source_item_id in keys:
+            sid = (source_item_id or "").strip()
+            if sid in ("", "None"):
+                where_parts.append("(p.source = ? AND (p.item_id IS NULL OR p.item_id IN ('', 'None')))")
+                params.append(source)
+            else:
+                where_parts.append("(p.source = ? AND p.item_id = ?)")
+                params.extend([source, sid])
+
+        where_clause = " OR ".join(where_parts)
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                WITH latest AS (
+                    SELECT source, MAX(scraped_at) AS scraped_at
+                    FROM products
+                    GROUP BY source
+                )
+                SELECT p.*, pi.image_hash, pi.image_mime, pi.updated_at as image_updated_at
+                FROM products p
+                JOIN latest l ON l.source = p.source AND l.scraped_at = p.scraped_at
+                LEFT JOIN product_links pl
+                    ON p.source = pl.source
+                    AND (
+                        p.item_id = pl.source_item_id
+                        OR (p.item_id IS NULL AND pl.source_item_id IN ('', 'None'))
+                    )
+                LEFT JOIN product_images pi
+                    ON pi.source = p.source
+                    AND pi.product_key = COALESCE(p.product_key, p.item_id, p.url, p.name)
+                WHERE pl.id IS NULL
+                AND ({where_clause})
+                ORDER BY p.source, p.name
+                """.format(where_clause=where_clause),
+                params,
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def search_canonical_products(self, query: str, limit: int = 20) -> list[dict]:
+        """Search canonical products by name."""
+        q = (query or "").strip()
+        if not q:
+            return []
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                SELECT id, name
+                FROM canonical_products
+                WHERE LOWER(name) LIKE ?
+                ORDER BY name
+                LIMIT ?
+                """,
+                (f"%{q.lower()}%", int(limit)),
             )
             return [dict(row) for row in cursor.fetchall()]
 

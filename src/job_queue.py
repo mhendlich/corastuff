@@ -63,7 +63,7 @@ class JobQueue:
 
         return job_id
 
-    def claim_next(self, worker_id: str) -> dict | None:
+    def claim_next(self, worker_id: str, max_running_jobs: int | None = None) -> dict | None:
         """
         Atomically claim the next available job.
 
@@ -71,6 +71,7 @@ class JobQueue:
 
         Args:
             worker_id: Unique identifier for the worker claiming the job
+            max_running_jobs: Optional global cap on running jobs across all workers
 
         Returns:
             Job dict or None if no jobs available
@@ -79,6 +80,14 @@ class JobQueue:
 
         with sqlite3.connect(self.db_path, isolation_level="IMMEDIATE") as conn:
             conn.row_factory = sqlite3.Row
+
+            if max_running_jobs is not None:
+                cursor = conn.execute(
+                    "SELECT COUNT(*) FROM job_queue WHERE status = 'running'"
+                )
+                running_count = int(cursor.fetchone()[0])
+                if running_count >= max_running_jobs:
+                    return None
 
             # Find and claim in one atomic operation using RETURNING
             cursor = conn.execute(

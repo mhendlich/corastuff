@@ -51,6 +51,24 @@
                 </div>
                 <p class="text-xs text-slate-500">Schedules are checked every 60 seconds by the scheduler.</p>
             </div>
+
+            <div class="app-card p-5 space-y-4">
+                <div>
+                    <h3 class="text-sm font-semibold text-white">Concurrency</h3>
+                    <p class="text-xs text-slate-400 mt-0.5">Caps how many scrapers can run at the same time.</p>
+                </div>
+                <form action="/scrapers/schedules/settings" method="POST" class="flex items-end gap-2">
+                    <div class="flex-1">
+                        <label for="scraper-concurrency-limit" class="block text-[11px] uppercase tracking-widest text-slate-400">Max concurrent scrapers</label>
+                        <input id="scraper-concurrency-limit" name="scraper_concurrency_limit" type="number" min="1" max="100" value="{{ scraper_concurrency_limit }}"
+                            class="mt-1 w-full app-input rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/60">
+                    </div>
+                    <button type="submit"
+                        class="app-btn inline-flex items-center px-3 py-2 rounded-md text-sm font-semibold">
+                        Save
+                    </button>
+                </form>
+            </div>
         </div>
 
         <div class="lg:col-span-2">
