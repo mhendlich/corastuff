@@ -40,7 +40,7 @@
                 </div>
                 {% endif %}
                 <div class="flex justify-between items-start">
-                    <span class="text-sm font-medium text-slate-200">{{ pd.source }}</span>
+                    <span class="text-sm font-medium text-slate-200">{{ pd.display_name or pd.source }}</span>
                     {% if pd.url %}
                     <a href="{{ pd.url }}" target="_blank" class="text-slate-400 hover:text-slate-200 text-xs">Visit</a>
                     {% endif %}
@@ -85,7 +85,7 @@
         {% for pd in price_data %}
         <div class="border-b border-white/10 last:border-b-0">
             <div class="px-6 py-3 bg-white/5 flex justify-between items-center">
-                <span class="font-medium text-slate-200">{{ pd.source }}</span>
+                <span class="font-medium text-slate-200">{{ pd.display_name or pd.source }}</span>
                 <a href="/prices/product/{{ pd.source }}/{{ pd.item_id }}" class="text-brand-cyan hover:text-white text-sm">
                     View Full History
                 </a>
@@ -132,7 +132,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const priceData = {{ price_data | tojson }};
+    const priceData = {{ price_chart_data | tojson }};
 
     if (priceData.length === 0) return;
 
@@ -176,7 +176,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .sort((a, b) => a.x - b.x);
 
         return {
-            label: pd.source,
+            label: pd.display_name || pd.source,
             data: dataPoints,
             borderColor: color.border,
             backgroundColor: color.bg,

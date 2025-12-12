@@ -111,19 +111,6 @@
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
-[data-sidebar-collapsed="true"] .nav-label,
-[data-sidebar-collapsed="true"] .sidebar-title {
-    display: none;
-}
-
-[data-sidebar-collapsed="true"] .app-sidebar {
-    width: 74px !important;
-}
-
-[data-sidebar-collapsed="true"] .app-nav-item {
-    justify-content: center;
-}
-
 .fade-in {
     animation: fadeIn 220ms ease-out;
 }

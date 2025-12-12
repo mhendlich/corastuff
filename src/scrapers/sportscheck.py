@@ -13,6 +13,7 @@ class SportscheckScraper(BaseScraper):
     """Scrape Blackroll products from Sportscheck.com."""
 
     name = "sportscheck"
+    display_name = "Sportscheck"
     url = "https://www.sportscheck.com/blackroll/"
 
     async def scrape(self) -> ScrapeResult:

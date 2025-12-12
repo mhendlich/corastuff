@@ -115,18 +115,32 @@ class Worker:
             scraper = get_scraper(scraper_name)
             result = await scraper.scrape()
 
+            duration = perf_counter() - start_time
+            products_found = len(result.products)
+
+            if products_found == 0:
+                error_msg = "No products found"
+                self.queue.complete(
+                    job_id,
+                    success=False,
+                    products_found=0,
+                    error_message=error_msg,
+                    duration_seconds=duration,
+                )
+                logger.warning(f"Job {job_id} failed: {error_msg}")
+                return
+
             # Save results to database
             self.db.save_results(result)
 
-            duration = perf_counter() - start_time
             self.queue.complete(
                 job_id,
                 success=True,
-                products_found=len(result.products),
+                products_found=products_found,
                 duration_seconds=duration,
             )
 
-            logger.info(f"Job {job_id} completed: {len(result.products)} products in {duration:.2f}s")
+            logger.info(f"Job {job_id} completed: {products_found} products in {duration:.2f}s")
 
         except Exception as e:
             duration = perf_counter() - start_time

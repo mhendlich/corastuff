@@ -34,7 +34,7 @@
                     {% elif source == 'galaxus_de' %}bg-pink-500/15 text-pink-300 border-pink-500/30
                     {% elif source == 'kaufland' %}bg-orange-500/15 text-orange-300 border-orange-500/30
                     {% else %}bg-white/5 text-slate-200 border-white/10{% endif %}">
-                    {{ source }}
+                    {{ source_display_name or source }}
                 </span>
                 {% if product.url %}
                 <a href="{{ product.url }}" target="_blank" class="inline-block mt-2 text-sm text-brand-cyan hover:text-white">

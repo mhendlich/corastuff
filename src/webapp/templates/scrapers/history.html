@@ -68,7 +68,7 @@
                 <select id="scraper" name="scraper" class="mt-1 app-input block w-56 pl-3 pr-10 py-2 text-sm rounded-md focus:outline-none focus:ring-2 focus:ring-brand/60">
                     <option value="">All Scrapers</option>
                     {% for name in scraper_names %}
-                    <option value="{{ name }}" {% if selected_scraper == name %}selected{% endif %}>{{ name }}</option>
+                    <option value="{{ name }}" {% if selected_scraper == name %}selected{% endif %}>{{ scraper_display_names.get(name, name) }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -129,7 +129,7 @@
                 {% for run in runs %}
                 <tr class="{% if run.status == 'failed' %}bg-red-500/5 hover:bg-red-500/10{% else %}hover:bg-white/5{% endif %}">
                     <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm font-medium text-white">{{ run.scraper_name }}</div>
+                        <div class="text-sm font-medium text-white">{{ run.display_name or run.scraper_name }}</div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         {% if run.status == 'running' %}

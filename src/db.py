@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 import sqlite3
+import statistics
 from io import BytesIO
 from difflib import SequenceMatcher
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from collections import defaultdict
 
 from PIL import Image
 
@@ -51,6 +54,11 @@ class ProductDatabase:
                 CREATE INDEX IF NOT EXISTS idx_source_item
                 ON products (source, item_id)
             """)
+            # Composite index for historical lookups per item
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_source_item_time
+                ON products (source, item_id, scraped_at)
+            """)
 
             # Ensure product_key column exists for older databases
             try:
@@ -77,6 +85,10 @@ class ProductDatabase:
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_product_images_source
                 ON product_images (source)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_product_images_hash
+                ON product_images (image_hash)
             """)
 
             # Canonical products - master product entities
@@ -435,13 +447,21 @@ class ProductDatabase:
             )
             return [dict(row) for row in cursor.fetchall()]
 
-    def get_unlinked_products(self) -> list[dict]:
-        """Get latest products that are not linked to any canonical product."""
+    def get_unlinked_products(self, include_images: bool = True) -> list[dict]:
+        """Get latest products that are not linked to any canonical product.
+
+        include_images=False avoids pulling large blobs when we only need metadata.
+        """
+        image_select = (
+            ", pi.image_data, pi.image_mime, pi.image_hash, pi.updated_at as image_updated_at"
+            if include_images
+            else ", pi.image_hash, pi.image_mime, pi.updated_at as image_updated_at"
+        )
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 """
-                SELECT p.*, pi.image_data, pi.image_mime, pi.image_hash, pi.updated_at as image_updated_at
+                SELECT p.*{image_select}
                 FROM products p
                 LEFT JOIN product_links pl ON p.source = pl.source AND p.item_id = pl.source_item_id
                 LEFT JOIN product_images pi
@@ -452,7 +472,7 @@ class ProductDatabase:
                     SELECT MAX(p2.scraped_at) FROM products p2 WHERE p2.source = p.source
                 )
                 ORDER BY p.source, p.name
-                """
+                """.format(image_select=image_select)
             )
             return [dict(row) for row in cursor.fetchall()]
 
@@ -477,6 +497,21 @@ class ProductDatabase:
                 """
             )
             return [dict(row) for row in cursor.fetchall()]
+
+    def get_product_image_by_hash(self, image_hash: str) -> dict | None:
+        """Fetch a stored product image by its content hash."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                SELECT image_data, image_mime, updated_at
+                FROM product_images
+                WHERE image_hash = ?
+                """,
+                (image_hash,),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
 
     def get_link_suggestions(self, limit: int = 15, exclude_keys: list[str] | None = None) -> list[dict]:
         """Return high-confidence canonical matches for unlinked products."""
@@ -784,6 +819,681 @@ class ProductDatabase:
                 "sources": source_count,
             }
 
+    @staticmethod
+    def _parse_timestamp(value: str | None) -> datetime | None:
+        """Parse ISO timestamp strings safely."""
+        if not value:
+            return None
+
+        for candidate in (value, value.replace("Z", "") if "Z" in value else value):
+            try:
+                parsed = datetime.fromisoformat(candidate)
+                # Normalize to naive UTC to avoid offset-aware vs naive math errors
+                if parsed.tzinfo:
+                    return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+                return parsed
+            except Exception:
+                continue
+        return None
+
+    def get_source_coverage_snapshot(self, limit: int = 6) -> list[dict]:
+        """Return coverage per source for the latest scrape (linked vs unlinked, missing prices)."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                WITH latest AS (
+                    SELECT source, MAX(scraped_at) AS latest_at
+                    FROM products
+                    GROUP BY source
+                ),
+                current AS (
+                    SELECT p.*
+                    FROM products p
+                    JOIN latest l ON p.source = l.source AND p.scraped_at = l.latest_at
+                )
+                SELECT
+                    c.source,
+                    COUNT(*) AS total_products,
+                    SUM(CASE WHEN pl.id IS NULL THEN 1 ELSE 0 END) AS unlinked_products,
+                    SUM(CASE WHEN c.price IS NULL THEN 1 ELSE 0 END) AS missing_prices,
+                    MAX(c.scraped_at) AS scraped_at
+                FROM current c
+                LEFT JOIN product_links pl
+                    ON c.source = pl.source
+                    AND (pl.source_item_id = c.item_id OR (pl.source_item_id IN ('', 'None') AND c.item_id IS NULL))
+                GROUP BY c.source
+                ORDER BY unlinked_products DESC, missing_prices DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+
+            results: list[dict] = []
+            for row in cursor.fetchall():
+                total = row["total_products"] or 0
+                unlinked = row["unlinked_products"] or 0
+                missing_prices = row["missing_prices"] or 0
+                coverage_pct = 0.0
+                if total > 0:
+                    coverage_pct = round((1 - (unlinked / total)) * 100, 1)
+
+                results.append(
+                    {
+                        "source": row["source"],
+                        "total_products": total,
+                        "unlinked_products": unlinked,
+                        "missing_prices": missing_prices,
+                        "coverage_pct": coverage_pct,
+                        "scraped_at": row["scraped_at"],
+                    }
+                )
+
+            return results
+
+    def get_canonical_coverage_gaps(self, limit: int = 6) -> list[dict]:
+        """Return canonical products with weak coverage (zero or single link)."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                SELECT
+                    cp.id,
+                    cp.name,
+                    cp.created_at,
+                    COUNT(pl.id) AS link_count,
+                    MIN(pl.created_at) AS first_linked_at,
+                    MAX(pl.created_at) AS last_linked_at
+                FROM canonical_products cp
+                LEFT JOIN product_links pl ON cp.id = pl.canonical_id
+                GROUP BY cp.id
+                HAVING link_count <= 1
+                ORDER BY link_count ASC, cp.created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_recent_scrape_failures(self, hours: int = 36, limit: int = 10) -> list[dict]:
+        """Return recent scrape failures within the provided window."""
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                "SELECT * FROM scrape_runs ORDER BY started_at DESC LIMIT ?",
+                (max(limit * 3, 30),),
+            )
+
+            failures: list[dict] = []
+            for row in cursor.fetchall():
+                started_at = self._parse_timestamp(row["started_at"])
+                if started_at and started_at < cutoff:
+                    break
+                if row["status"] == "failed":
+                    failures.append(dict(row))
+                if len(failures) >= limit:
+                    break
+            return failures
+
+    def get_insights_snapshot(self) -> dict:
+        """Build a snapshot of interesting insights across price movements, canonicals, and scrape health."""
+        now = datetime.utcnow()
+        stats = self.get_stats()
+        last_scrapes = self.get_last_scrape_times()
+        latest_products = self.get_latest_products_with_price_change(include_images=False)
+        latest_by_pair = {
+            (p.get("source"), p.get("item_id")): p
+            for p in latest_products
+            if p.get("source") and p.get("item_id")
+        }
+
+        def _median(values: list[float]) -> float | None:
+            if not values:
+                return None
+            try:
+                return float(statistics.median(values))
+            except statistics.StatisticsError:
+                return None
+
+        price_drops: list[dict] = []
+        price_rises: list[dict] = []
+        missing_prices: list[dict] = []
+
+        # New signals
+        multi_horizon: dict[str, list[dict]] = {
+            "7d_drops": [],
+            "7d_spikes": [],
+            "30d_drops": [],
+            "30d_spikes": [],
+        }
+        new_lows: list[dict] = []
+        new_highs: list[dict] = []
+        volatility_items: list[dict] = []
+        sustained_drops: list[dict] = []
+        sustained_rises: list[dict] = []
+        returned_to_normal: list[dict] = []
+        dormant_revived: list[dict] = []
+        canonical_drops: list[dict] = []
+        canonical_spikes: list[dict] = []
+        dispersion_leaders: list[dict] = []
+        outliers: list[dict] = []
+
+        drop_threshold_pct = -8.0
+        spike_threshold_pct = 12.0
+        outlier_threshold_pct = 18.0
+        recent_window = timedelta(hours=24)
+        dormant_days = 14
+
+        cutoff_7d = (now - timedelta(days=7)).isoformat()
+        cutoff_30d = (now - timedelta(days=30)).isoformat()
+        cutoff_30d_history = cutoff_30d
+
+        # Historical stats for items in latest scrape
+        item_stats: dict[tuple[str, str], dict] = {}
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                WITH latest_scrapes AS (
+                    SELECT source, MAX(scraped_at) as latest_at
+                    FROM products
+                    GROUP BY source
+                ),
+                latest_items AS (
+                    SELECT p.source, p.item_id, ls.latest_at
+                    FROM products p
+                    JOIN latest_scrapes ls
+                        ON p.source = ls.source AND p.scraped_at = ls.latest_at
+                    WHERE p.item_id IS NOT NULL
+                )
+                SELECT li.source, li.item_id,
+                       MIN(p.scraped_at) as first_seen,
+                       MIN(p.price) as min_price,
+                       MAX(p.price) as max_price,
+                       MIN(CASE WHEN p.scraped_at < li.latest_at THEN p.price END) as min_prev_price,
+                       MAX(CASE WHEN p.scraped_at < li.latest_at THEN p.price END) as max_prev_price,
+                       (
+                         SELECT p2.price
+                         FROM products p2
+                         WHERE p2.source = li.source
+                           AND p2.item_id = li.item_id
+                           AND p2.price IS NOT NULL
+                           AND p2.scraped_at <= ?
+                         ORDER BY p2.scraped_at DESC
+                         LIMIT 1
+                       ) as price_7d,
+                       (
+                         SELECT p3.price
+                         FROM products p3
+                         WHERE p3.source = li.source
+                           AND p3.item_id = li.item_id
+                           AND p3.price IS NOT NULL
+                           AND p3.scraped_at <= ?
+                         ORDER BY p3.scraped_at DESC
+                         LIMIT 1
+                       ) as price_30d
+                FROM latest_items li
+                JOIN products p
+                    ON p.source = li.source AND p.item_id = li.item_id
+                WHERE p.price IS NOT NULL
+                GROUP BY li.source, li.item_id
+                """,
+                (cutoff_7d, cutoff_30d),
+            )
+            for row in cursor.fetchall():
+                item_stats[(row["source"], row["item_id"])] = dict(row)
+
+        # Recent movers, missing prices, and enriched per-item metrics
+        for product in latest_products:
+            source = product.get("source")
+            item_id = product.get("item_id")
+            scraped_at_raw = product.get("scraped_at")
+            scraped_at = self._parse_timestamp(scraped_at_raw)
+            change_pct = product.get("price_change_pct")
+            change_abs = product.get("price_change")
+            price = product.get("price")
+
+            entry = {
+                "name": product.get("name"),
+                "source": source,
+                "price": price,
+                "currency": product.get("currency"),
+                "change": change_abs,
+                "change_pct": change_pct,
+                "prev_price": product.get("prev_price"),
+                "item_id": item_id,
+                "scraped_at": scraped_at_raw,
+                "url": product.get("url"),
+                "canonical_id": product.get("canonical_id"),
+            }
+
+            if change_pct is not None and change_abs is not None:
+                if change_pct <= drop_threshold_pct or change_abs <= -5:
+                    price_drops.append(entry)
+                elif change_pct >= spike_threshold_pct or change_abs >= 8:
+                    price_rises.append(entry)
+
+            if price is None:
+                missing_prices.append(entry)
+
+            if source and item_id and price is not None:
+                stats_row = item_stats.get((source, item_id), {})
+                price_7d = stats_row.get("price_7d")
+                price_30d = stats_row.get("price_30d")
+                min_price = stats_row.get("min_price")
+                max_price = stats_row.get("max_price")
+                min_prev_price = stats_row.get("min_prev_price")
+                max_prev_price = stats_row.get("max_prev_price")
+                first_seen = stats_row.get("first_seen")
+
+                if price_7d is not None and price_7d > 0:
+                    delta_pct = ((price - price_7d) / price_7d) * 100
+                    delta_abs = price - price_7d
+                    if abs(delta_pct) >= 5:
+                        horizon_entry = {**entry, "baseline_price": price_7d, "horizon_days": 7, "delta_pct": delta_pct, "delta_abs": delta_abs}
+                        (multi_horizon["7d_drops"] if delta_pct < 0 else multi_horizon["7d_spikes"]).append(horizon_entry)
+
+                if price_30d is not None and price_30d > 0:
+                    delta_pct = ((price - price_30d) / price_30d) * 100
+                    delta_abs = price - price_30d
+                    if abs(delta_pct) >= 7:
+                        horizon_entry = {**entry, "baseline_price": price_30d, "horizon_days": 30, "delta_pct": delta_pct, "delta_abs": delta_abs}
+                        (multi_horizon["30d_drops"] if delta_pct < 0 else multi_horizon["30d_spikes"]).append(horizon_entry)
+
+                epsilon = 0.01
+                if min_prev_price is not None and price <= float(min_prev_price) - epsilon:
+                    new_lows.append({**entry, "extreme_price": float(min_price), "first_seen": first_seen})
+                if max_prev_price is not None and price >= float(max_prev_price) + epsilon:
+                    new_highs.append({**entry, "extreme_price": float(max_price), "first_seen": first_seen})
+
+        price_drops.sort(key=lambda x: x.get("change_pct") if x.get("change_pct") is not None else float("inf"))
+        price_rises.sort(key=lambda x: x.get("change_pct") if x.get("change_pct") is not None else -float("inf"), reverse=True)
+
+        drop_count = len(price_drops)
+        rise_count = len(price_rises)
+        missing_price_count = len(missing_prices)
+        new_lows_count = len(new_lows)
+        new_highs_count = len(new_highs)
+
+        # Limit noise and size
+        price_drops = price_drops[:8]
+        price_rises = price_rises[:6]
+        missing_prices = missing_prices[:8]
+
+        for key in multi_horizon:
+            multi_horizon[key].sort(key=lambda x: x.get("delta_pct") or 0)
+        multi_horizon["7d_drops"] = multi_horizon["7d_drops"][:6]
+        multi_horizon["7d_spikes"] = list(reversed(multi_horizon["7d_spikes"]))[:6]
+        multi_horizon["30d_drops"] = multi_horizon["30d_drops"][:6]
+        multi_horizon["30d_spikes"] = list(reversed(multi_horizon["30d_spikes"]))[:6]
+
+        new_lows.sort(key=lambda x: (x.get("change_pct") or 0))
+        new_highs.sort(key=lambda x: -(x.get("change_pct") or 0))
+        new_lows = new_lows[:6]
+        new_highs = new_highs[:6]
+
+        # Volatility over last 30 days
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                WITH latest_scrapes AS (
+                    SELECT source, MAX(scraped_at) as latest_at
+                    FROM products
+                    GROUP BY source
+                ),
+                latest_items AS (
+                    SELECT p.source, p.item_id
+                    FROM products p
+                    JOIN latest_scrapes ls
+                        ON p.source = ls.source AND p.scraped_at = ls.latest_at
+                    WHERE p.item_id IS NOT NULL
+                ),
+                history AS (
+                    SELECT p.source, p.item_id, p.price
+                    FROM products p
+                    JOIN latest_items li
+                        ON p.source = li.source AND p.item_id = li.item_id
+                    WHERE p.price IS NOT NULL AND p.scraped_at >= ?
+                )
+                SELECT source, item_id,
+                       COUNT(*) as n,
+                       AVG(price) as mean_price,
+                       AVG(price * price) as mean_sq
+                FROM history
+                GROUP BY source, item_id
+                HAVING n >= 4
+                """,
+                (cutoff_30d_history,),
+            )
+            vol_rows = [dict(r) for r in cursor.fetchall()]
+
+        vol_scores: dict[tuple[str, str], float] = {}
+        for row in vol_rows:
+            mean_price = row.get("mean_price") or 0
+            mean_sq = row.get("mean_sq") or 0
+            if mean_price <= 0:
+                continue
+            variance = max(0.0, float(mean_sq) - float(mean_price) ** 2)
+            stddev = math.sqrt(variance)
+            cv = stddev / float(mean_price)
+            vol_scores[(row["source"], row["item_id"])] = cv
+
+        for product in latest_products:
+            source = product.get("source")
+            item_id = product.get("item_id")
+            if not source or not item_id:
+                continue
+            cv = vol_scores.get((source, item_id))
+            if cv is None:
+                continue
+            volatility_items.append(
+                {
+                    "name": product.get("name"),
+                    "source": source,
+                    "item_id": item_id,
+                    "price": product.get("price"),
+                    "currency": product.get("currency"),
+                    "cv": cv,
+                    "canonical_id": product.get("canonical_id"),
+                }
+            )
+        volatility_items.sort(key=lambda x: x["cv"], reverse=True)
+        volatility_items = volatility_items[:8]
+
+        # Last 4 prices for sustained trends and dormancy gaps
+        ranked_prices: list[dict] = []
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                WITH latest_scrapes AS (
+                    SELECT source, MAX(scraped_at) as latest_at
+                    FROM products
+                    GROUP BY source
+                ),
+                latest_items AS (
+                    SELECT p.source, p.item_id
+                    FROM products p
+                    JOIN latest_scrapes ls
+                        ON p.source = ls.source AND p.scraped_at = ls.latest_at
+                    WHERE p.item_id IS NOT NULL
+                ),
+                ranked AS (
+                    SELECT p.source, p.item_id, p.price, p.scraped_at,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY p.source, p.item_id
+                               ORDER BY p.scraped_at DESC
+                           ) as rn
+                    FROM products p
+                    JOIN latest_items li
+                        ON p.source = li.source AND p.item_id = li.item_id
+                    WHERE p.price IS NOT NULL
+                )
+                SELECT * FROM ranked
+                WHERE rn <= 4
+                ORDER BY source, item_id, rn
+                """
+            )
+            ranked_prices = [dict(r) for r in cursor.fetchall()]
+
+        prices_by_item: dict[tuple[str, str], list[dict]] = defaultdict(list)
+        for row in ranked_prices:
+            prices_by_item[(row["source"], row["item_id"])].append(row)
+
+        for (source, item_id), rows in prices_by_item.items():
+            rows.sort(key=lambda r: r["rn"])  # rn=1 latest
+            if len(rows) < 4:
+                continue
+            series_latest_first = [float(r["price"]) for r in rows]
+            series_oldest_first = list(reversed(series_latest_first))
+            oldest, latest = series_oldest_first[0], series_oldest_first[-1]
+            if oldest <= 0:
+                continue
+            deltas_pct = []
+            monotone_down = True
+            monotone_up = True
+            for i in range(1, len(series_oldest_first)):
+                prev_p = series_oldest_first[i - 1]
+                cur_p = series_oldest_first[i]
+                if prev_p <= 0:
+                    monotone_down = monotone_up = False
+                    break
+                step_pct = ((cur_p - prev_p) / prev_p) * 100
+                deltas_pct.append(step_pct)
+                if step_pct > -1.0:
+                    monotone_down = False
+                if step_pct < 1.0:
+                    monotone_up = False
+            trend_pct = ((latest - oldest) / oldest) * 100
+
+            base_info = latest_by_pair.get((source, item_id), {})
+            trend_entry = {
+                "name": base_info.get("name"),
+                "source": source,
+                "item_id": item_id,
+                "price": base_info.get("price"),
+                "currency": base_info.get("currency"),
+                "url": base_info.get("url"),
+                "canonical_id": base_info.get("canonical_id"),
+                "trend_pct": trend_pct,
+                "prices": series_oldest_first,
+            }
+
+            if monotone_down:
+                sustained_drops.append(trend_entry)
+            if monotone_up:
+                sustained_rises.append(trend_entry)
+
+            latest_at = self._parse_timestamp(rows[0]["scraped_at"])
+            prev_at = self._parse_timestamp(rows[1]["scraped_at"]) if len(rows) > 1 else None
+            if latest_at and prev_at:
+                gap_days = (latest_at - prev_at).days
+                if gap_days >= dormant_days:
+                    dormant_revived.append(
+                        {
+                            **trend_entry,
+                            "gap_days": gap_days,
+                            "prev_seen": rows[1]["scraped_at"],
+                            "latest_seen": rows[0]["scraped_at"],
+                        }
+                    )
+
+        sustained_drops.sort(key=lambda x: x["trend_pct"])
+        sustained_rises.sort(key=lambda x: x["trend_pct"], reverse=True)
+        sustained_drops = sustained_drops[:6]
+        sustained_rises = sustained_rises[:6]
+        dormant_revived.sort(key=lambda x: x["gap_days"], reverse=True)
+        dormant_revived = dormant_revived[:6]
+
+        # First-seen based new arrivals
+        new_arrivals: list[dict] = []
+        for product in latest_products:
+            source = product.get("source")
+            item_id = product.get("item_id")
+            if not source or not item_id:
+                continue
+            first_seen_raw = item_stats.get((source, item_id), {}).get("first_seen")
+            first_seen_dt = self._parse_timestamp(first_seen_raw)
+            if first_seen_dt and (now - first_seen_dt) <= recent_window:
+                new_arrivals.append(
+                    {
+                        "name": product.get("name"),
+                        "source": source,
+                        "price": product.get("price"),
+                        "currency": product.get("currency"),
+                        "item_id": item_id,
+                        "scraped_at": product.get("scraped_at"),
+                        "url": product.get("url"),
+                        "canonical_id": product.get("canonical_id"),
+                        "first_seen": first_seen_raw,
+                        "age_hours": round((now - first_seen_dt).total_seconds() / 3600, 1),
+                    }
+                )
+        new_arrivals.sort(key=lambda x: x.get("first_seen") or "", reverse=True)
+        new_arrivals = new_arrivals[:8]
+
+        # Canonical-level signals
+        canonicals = self.get_all_canonical_products()
+        canonical_names = {c["id"]: c["name"] for c in canonicals}
+        products_by_canonical: dict[int, list[dict]] = defaultdict(list)
+        for product in latest_products:
+            cid = product.get("canonical_id")
+            if cid:
+                products_by_canonical[int(cid)].append(product)
+
+        canonical_moves: list[dict] = []
+        dispersion_candidates: list[dict] = []
+        outlier_items: list[dict] = []
+        returned_items: list[dict] = []
+        for cid, items in products_by_canonical.items():
+            current_prices = [float(i["price"]) for i in items if i.get("price") is not None]
+            prev_prices = [float(i["prev_price"]) for i in items if i.get("prev_price") is not None]
+            median_current = _median(current_prices)
+            median_prev = _median(prev_prices)
+            if median_current is not None and len(current_prices) >= 2 and median_current > 0:
+                spread_pct = ((max(current_prices) - min(current_prices)) / median_current) * 100
+                dispersion_candidates.append(
+                    {
+                        "canonical_id": cid,
+                        "name": canonical_names.get(cid, f"Canonical {cid}"),
+                        "median_price": median_current,
+                        "min_price": min(current_prices),
+                        "max_price": max(current_prices),
+                        "spread_pct": spread_pct,
+                        "count": len(current_prices),
+                    }
+                )
+                for item in items:
+                    if item.get("price") is None:
+                        continue
+                    deviation_pct = ((float(item["price"]) - median_current) / median_current) * 100
+                    if abs(deviation_pct) >= outlier_threshold_pct and len(current_prices) >= 3:
+                        outlier_items.append(
+                            {
+                                "canonical_id": cid,
+                                "canonical_name": canonical_names.get(cid, f"Canonical {cid}"),
+                                "name": item.get("name"),
+                                "source": item.get("source"),
+                                "item_id": item.get("item_id"),
+                                "price": item.get("price"),
+                                "currency": item.get("currency"),
+                                "deviation_pct": deviation_pct,
+                                "median_price": median_current,
+                                "url": item.get("url"),
+                            }
+                        )
+
+            if median_current is not None and median_prev is not None and median_prev > 0:
+                pct_change = ((median_current - median_prev) / median_prev) * 100
+                canonical_moves.append(
+                    {
+                        "canonical_id": cid,
+                        "name": canonical_names.get(cid, f"Canonical {cid}"),
+                        "median_price": median_current,
+                        "prev_median_price": median_prev,
+                        "pct_change": pct_change,
+                        "count": len(items),
+                    }
+                )
+
+                # Returned-to-normal items
+                if median_current > 0 and median_prev > 0:
+                    for item in items:
+                        price_now = item.get("price")
+                        price_prev = item.get("prev_price")
+                        if price_now is None or price_prev is None:
+                            continue
+                        dev_prev = ((float(price_prev) - median_prev) / median_prev) * 100
+                        dev_now = ((float(price_now) - median_current) / median_current) * 100
+                        if abs(dev_prev) >= outlier_threshold_pct and abs(dev_now) < outlier_threshold_pct * 0.6:
+                            returned_items.append(
+                                {
+                                    "canonical_id": cid,
+                                    "canonical_name": canonical_names.get(cid, f"Canonical {cid}"),
+                                    "name": item.get("name"),
+                                    "source": item.get("source"),
+                                    "item_id": item.get("item_id"),
+                                    "price": price_now,
+                                    "prev_price": price_prev,
+                                    "currency": item.get("currency"),
+                                    "dev_prev": dev_prev,
+                                    "dev_now": dev_now,
+                                    "url": item.get("url"),
+                                }
+                            )
+
+        canonical_moves.sort(key=lambda x: x["pct_change"])
+        canonical_drops = canonical_moves[:5]
+        canonical_spikes = list(reversed(canonical_moves))[:5]
+
+        dispersion_candidates.sort(key=lambda x: x["spread_pct"], reverse=True)
+        dispersion_leaders = dispersion_candidates[:6]
+
+        outlier_items.sort(key=lambda x: abs(x["deviation_pct"]), reverse=True)
+        outliers = outlier_items[:8]
+
+        returned_items.sort(key=lambda x: abs(x["dev_prev"]), reverse=True)
+        returned_to_normal = returned_items[:6]
+
+        coverage = self.get_source_coverage_snapshot(limit=8)
+        canonical_gaps = self.get_canonical_coverage_gaps(limit=8)
+
+        stale_sources: list[dict] = []
+        stale_cutoff = now - timedelta(hours=12)
+        for source, ts in last_scrapes.items():
+            parsed = self._parse_timestamp(ts)
+            if parsed and parsed < stale_cutoff:
+                stale_sources.append(
+                    {
+                        "source": source,
+                        "last_scraped": ts,
+                        "age_hours": round((now - parsed).total_seconds() / 3600, 1),
+                    }
+                )
+        stale_sources.sort(key=lambda x: x["age_hours"], reverse=True)
+
+        failures = self.get_recent_scrape_failures(hours=36, limit=10)
+
+        summary = {
+            "price_drops": drop_count,
+            "price_rises": rise_count,
+            "new_extremes": new_lows_count + new_highs_count,
+            "outliers": len(outlier_items),
+            "stale_sources": len(stale_sources),
+            "unlinked_products": stats.get("unlinked_products", 0),
+            "canonical_gaps": len(canonical_gaps),
+            "recent_failures": len(failures),
+            "missing_prices": missing_price_count,
+        }
+
+        return {
+            "summary": summary,
+            "price_drops": price_drops,
+            "price_rises": price_rises,
+            "multi_horizon": multi_horizon,
+            "new_lows": new_lows,
+            "new_highs": new_highs,
+            "volatility_items": volatility_items,
+            "sustained_drops": sustained_drops,
+            "sustained_rises": sustained_rises,
+            "canonical_drops": canonical_drops,
+            "canonical_spikes": canonical_spikes,
+            "dispersion_leaders": dispersion_leaders,
+            "outliers": outliers,
+            "returned_to_normal": returned_to_normal,
+            "new_arrivals": new_arrivals,
+            "dormant_revived": dormant_revived,
+            "missing_prices": missing_prices,
+            "coverage": coverage,
+            "canonical_gaps": canonical_gaps,
+            "stale_sources": stale_sources,
+            "recent_failures": failures,
+            "sources_seen": sorted(last_scrapes.keys()),
+            "last_scrape_times": last_scrapes,
+        }
+
     def reset_all(self) -> dict:
         """Clear all database tables and return counts of deleted records."""
         with sqlite3.connect(self.db_path) as conn:
@@ -1016,8 +1726,16 @@ class ProductDatabase:
             )
             return [dict(row) for row in cursor.fetchall()]
 
-    def get_latest_products_with_price_change(self) -> list[dict]:
-        """Get latest products with price change info from previous scrape."""
+    def get_latest_products_with_price_change(self, include_images: bool = True) -> list[dict]:
+        """Get latest products with price change info from previous scrape.
+
+        include_images=False avoids loading large blobs when only hashes are needed.
+        """
+        image_select = (
+            ", pi.image_data, pi.image_mime, pi.image_hash, pi.updated_at as image_updated_at"
+            if include_images
+            else ", pi.image_hash, pi.image_mime, pi.updated_at as image_updated_at"
+        )
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
@@ -1051,15 +1769,15 @@ class ProductDatabase:
                             ELSE NULL END as price_change,
                        CASE WHEN pp.prev_price IS NOT NULL AND pp.prev_price > 0 AND cp.price IS NOT NULL
                             THEN ((cp.price - pp.prev_price) / pp.prev_price) * 100
-                            ELSE NULL END as price_change_pct,
-                       pi.image_data, pi.image_mime, pi.image_hash, pi.updated_at as image_updated_at
+                            ELSE NULL END as price_change_pct
+                       {image_select}
                 FROM current_products cp
                 LEFT JOIN previous_products pp ON cp.source = pp.source AND cp.item_id = pp.item_id
                 LEFT JOIN product_images pi
                     ON pi.source = cp.source
                     AND pi.product_key = COALESCE(cp.product_key, cp.item_id, cp.url, cp.name)
                 ORDER BY cp.source, cp.name
-                """
+                """.format(image_select=image_select)
             )
             return [dict(row) for row in cursor.fetchall()]
 

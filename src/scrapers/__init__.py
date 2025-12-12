@@ -6,7 +6,13 @@ from .galaxus import GalaxusCHScraper, GalaxusDEScraper
 from .kaufland import KauflandScraper
 from .sportscheck import SportscheckScraper
 
-__all__ = ["BaseScraper", "get_scraper", "get_all_scrapers", "list_scrapers"]
+__all__ = [
+    "BaseScraper",
+    "get_scraper",
+    "get_all_scrapers",
+    "list_scrapers",
+    "get_scraper_display_name",
+]
 
 SCRAPERS: dict[str, type[BaseScraper]] = {
     "bergzeit": BergzeitScraper,
@@ -14,6 +20,11 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
     "galaxus_ch": GalaxusCHScraper,
     "galaxus_de": GalaxusDEScraper,
     "kaufland": KauflandScraper,
+}
+
+SCRAPER_DISPLAY_NAMES: dict[str, str] = {
+    key: getattr(cls, "display_name", key.replace("_", " ").title())
+    for key, cls in SCRAPERS.items()
 }
 
 
@@ -33,3 +44,8 @@ def get_all_scrapers() -> list[BaseScraper]:
 def list_scrapers() -> list[str]:
     """List all available scraper names."""
     return list(SCRAPERS.keys())
+
+
+def get_scraper_display_name(name: str) -> str:
+    """Get a human-friendly display name for a scraper."""
+    return SCRAPER_DISPLAY_NAMES.get(name, name)

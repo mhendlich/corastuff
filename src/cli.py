@@ -37,6 +37,7 @@ async def run_scraper(scraper: BaseScraper) -> ScrapeResult | None:
         scraper.save_results(result)
     else:
         print(f"[{scraper.name}] No products found!")
+        return None
 
     return result
 

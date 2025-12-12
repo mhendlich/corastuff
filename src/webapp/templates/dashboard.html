@@ -26,7 +26,7 @@
             {% for source in sources %}
             <li class="px-6 py-4 flex items-center justify-between app-card-hover">
                 <div>
-                    <div class="text-sm font-medium text-white">{{ source }}</div>
+                    <div class="text-sm font-medium text-white">{{ source_display_names.get(source, source) }}</div>
                     {% if last_scrape_times and last_scrape_times.get(source) %}
                     <div class="text-xs text-slate-400 mt-1">
                         Last scraped: {{ last_scrape_times[source][:16].replace('T', ' ') }}

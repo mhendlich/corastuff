@@ -7,10 +7,16 @@
                    onchange="updateBulkSelection()">
         </div>
         <div class="flex-shrink-0 mt-0.5">
-            {% set img_src = product.image_data|image_data_uri(product.image_mime) %}
+            {% set img_src = None %}
+            {% if product.image_hash %}
+                {% set img_src = '/media/product-image/' ~ product.image_hash %}
+                {% if product.image_updated_at %}
+                    {% set img_src = img_src ~ '?v=' ~ product.image_updated_at|urlencode %}
+                {% endif %}
+            {% endif %}
             <div class="h-14 w-14 rounded-md overflow-hidden border border-white/10 bg-white/5 flex items-center justify-center">
                 {% if img_src %}
-                <img src="{{ img_src }}" alt="{{ product.name }}" class="h-full w-full object-cover">
+                <img src="{{ img_src }}" alt="{{ product.name }}" class="h-full w-full object-cover" loading="lazy" decoding="async">
                 {% else %}
                 <div class="text-[10px] text-slate-400 text-center px-2 leading-tight">No image</div>
                 {% endif %}

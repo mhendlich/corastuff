@@ -7,9 +7,9 @@ from enum import Enum
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 
-from ..scrapers import get_scraper, list_scrapers
+from ..scrapers import get_scraper, get_scraper_display_name, list_scrapers
 from ..scheduler import get_scheduler, init_scheduler
 from ..job_queue import JobQueue
 from .auth import (
@@ -135,6 +135,22 @@ def _to_data_uri(data: bytes | None, mime: str | None = None) -> str | None:
     return f"data:{mime_type};base64,{encoded}"
 
 
+def _serialize_price_history(history: list[dict]) -> list[dict]:
+    """Remove non-JSON-safe fields (like image blobs) from price history entries."""
+    serialized: list[dict] = []
+    for entry in history:
+        serialized.append(
+            {
+                "scraped_at": entry.get("scraped_at"),
+                "price": entry.get("price"),
+                "currency": entry.get("currency"),
+                "item_id": entry.get("item_id"),
+                "source": entry.get("source"),
+            }
+        )
+    return serialized
+
+
 @router.get("/api/live-reload")
 async def live_reload_stream():
     """SSE stream for live reload - detects server restarts and template changes."""
@@ -167,6 +183,7 @@ async def dashboard(request: Request, _: str = Depends(require_auth)):
     stats = db.get_stats()
     sources = db.get_sources()
     last_scrape_times = db.get_last_scrape_times()
+    source_display_names = {s: get_scraper_display_name(s) for s in sources}
 
     return templates(request).TemplateResponse(
         "dashboard.html",
@@ -175,6 +192,27 @@ async def dashboard(request: Request, _: str = Depends(require_auth)):
             "stats": stats,
             "sources": sources,
             "last_scrape_times": last_scrape_times,
+            "source_display_names": source_display_names,
+        },
+    )
+
+
+@router.get("/insights", response_class=HTMLResponse)
+async def insights_page(request: Request, _: str = Depends(require_auth)):
+    """Automated insight page surfacing interesting changes and risks."""
+    db = get_db(request)
+    insights = db.get_insights_snapshot()
+    source_display_names = {
+        source: get_scraper_display_name(source)
+        for source in insights.get("sources_seen", [])
+    }
+
+    return templates(request).TemplateResponse(
+        "insights.html",
+        {
+            "request": request,
+            "insights": insights,
+            "source_display_names": source_display_names,
         },
     )
 
@@ -308,7 +346,7 @@ async def link_products_page(request: Request, _: str = Depends(require_auth)):
     canonical_products = db.get_all_canonical_products()
 
     # Get unlinked products grouped by source
-    unlinked = db.get_unlinked_products()
+    unlinked = db.get_unlinked_products(include_images=False)
     products_by_source = {}
     for source in sources:
         products_by_source[source] = [p for p in unlinked if p["source"] == source]
@@ -328,7 +366,7 @@ async def link_products_page(request: Request, _: str = Depends(require_auth)):
 async def get_source_products(request: Request, source: str, _: str = Depends(require_auth)):
     """HTMX endpoint: Get unlinked products for a source."""
     db = get_db(request)
-    unlinked = db.get_unlinked_products()
+    unlinked = db.get_unlinked_products(include_images=False)
     products = [p for p in unlinked if p["source"] == source]
 
     return templates(request).TemplateResponse(
@@ -339,6 +377,23 @@ async def get_source_products(request: Request, source: str, _: str = Depends(re
             "source": source,
         },
     )
+
+
+@router.get("/media/product-image/{image_hash}")
+async def product_image(request: Request, image_hash: str, _: str = Depends(require_auth)):
+    """Serve stored product images by hash to keep link pages lightweight."""
+    db = get_db(request)
+    image = db.get_product_image_by_hash(image_hash)
+
+    if not image or not image.get("image_data"):
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    return Response(
+        content=image["image_data"],
+        media_type=image.get("image_mime") or "image/webp",
+        headers={"Cache-Control": "public, max-age=604800"},
+    )
+
 
 @router.get("/link/suggestions")
 async def get_link_suggestions(
@@ -392,7 +447,7 @@ async def link_product_to_canonical(
     db.link_product(canonical_id, source, source_item_id)
 
     # Return updated product list for HTMX
-    unlinked = db.get_unlinked_products()
+    unlinked = db.get_unlinked_products(include_images=False)
     products = [p for p in unlinked if p["source"] == source]
 
     return templates(request).TemplateResponse(
@@ -419,7 +474,7 @@ async def link_product_to_new_canonical(
     db.link_product(canonical_id, source, source_item_id)
 
     # Return updated product list for HTMX
-    unlinked = db.get_unlinked_products()
+    unlinked = db.get_unlinked_products(include_images=False)
     products = [p for p in unlinked if p["source"] == source]
 
     return templates(request).TemplateResponse(
@@ -513,6 +568,7 @@ def _get_scraper_info(name: str, db, last_run_confirmed: bool = False) -> dict:
 
     return {
         "name": name,
+        "display_name": get_scraper_display_name(name),
         "status": status,
         "last_run": last_run["scraped_at"] if last_run else None,
         "last_count": last_run["product_count"] if last_run else None,
@@ -619,9 +675,10 @@ async def scraper_status(request: Request, name: str, confirmed: str | None = No
 async def prices_page(request: Request, _: str = Depends(require_auth)):
     """Price overview page - lists all products with price info."""
     db = get_db(request)
-    products = db.get_latest_products_with_price_change()
+    products = db.get_latest_products_with_price_change(include_images=False)
     sources = db.get_sources()
     canonical_products = db.get_all_canonical_products()
+    source_display_names = {s: get_scraper_display_name(s) for s in sources}
 
     # Group products by source for the table view
     products_by_source = {}
@@ -635,6 +692,7 @@ async def prices_page(request: Request, _: str = Depends(require_auth)):
             "products_by_source": products_by_source,
             "sources": sources,
             "canonical_products": canonical_products,
+            "source_display_names": source_display_names,
         },
     )
 
@@ -645,12 +703,13 @@ async def product_price_detail(request: Request, source: str, item_id: str, _: s
     db = get_db(request)
 
     # Get all price history for this product
-    history = db.get_product_price_history(source, item_id)
-    if not history:
+    raw_history = db.get_product_price_history(source, item_id)
+    if not raw_history:
         raise HTTPException(status_code=404, detail="Product not found")
 
     # Get latest product info
-    latest = history[0] if history else None
+    latest = raw_history[0] if raw_history else None
+    history = _serialize_price_history(raw_history)
 
     # Check if linked to canonical
     link = db.get_link_for_product(source, item_id)
@@ -663,6 +722,7 @@ async def product_price_detail(request: Request, source: str, item_id: str, _: s
             "history": history,
             "link": link,
             "source": source,
+            "source_display_name": get_scraper_display_name(source),
             "item_id": item_id,
         },
     )
@@ -683,20 +743,31 @@ async def canonical_price_detail(request: Request, canonical_id: int, _: str = D
 
     # Get price history for each linked product
     price_data = []
+    price_chart_data = []
     for link in links:
         history = db.get_product_price_history(link["source"], link["source_item_id"])
+        currency = link["currency"] or (history[0].get("currency") if history else None)
+        display_name = get_scraper_display_name(link["source"])
         image_data = link.get("image_data") or (history[0].get("image_data") if history else None)
         image_mime = link.get("image_mime") or (history[0].get("image_mime") if history else None)
         price_data.append({
             "source": link["source"],
+            "display_name": display_name,
             "item_id": link["source_item_id"],
             "current_price": link["price"],
-            "currency": link["currency"],
+            "currency": currency,
             "url": link["url"],
             "name": link["name"],
             "image_data": image_data,
             "image_mime": image_mime,
             "history": history,
+        })
+        price_chart_data.append({
+            "source": link["source"],
+            "display_name": display_name,
+            "item_id": link["source_item_id"],
+            "currency": currency,
+            "history": _serialize_price_history(history),
         })
 
     return templates(request).TemplateResponse(
@@ -705,6 +776,7 @@ async def canonical_price_detail(request: Request, canonical_id: int, _: str = D
             "request": request,
             "canonical": canonical,
             "price_data": price_data,
+            "price_chart_data": price_chart_data,
         },
     )
 
@@ -794,6 +866,7 @@ async def schedules_page(request: Request, _: str = Depends(require_auth)):
             "last_run": None,
             "next_run": None,
         })
+        schedule["display_name"] = get_scraper_display_name(name)
         scrapers_with_schedules.append(schedule)
 
     scheduler = get_scheduler()
@@ -855,6 +928,7 @@ async def update_schedule(
         "last_run": None,
         "next_run": None,
     }
+    schedule["display_name"] = get_scraper_display_name(name)
 
     return templates(request).TemplateResponse(
         "scrapers/_schedule_row.html",
@@ -923,6 +997,9 @@ async def scrape_history_page(
 
     # Get runs with optional filters
     runs = db.get_scrape_runs(scraper_name=scraper, status=status, limit=100)
+    scraper_display_names = {name: get_scraper_display_name(name) for name in scraper_names}
+    for run in runs:
+        run["display_name"] = scraper_display_names.get(run["scraper_name"], run["scraper_name"])
 
     # Get stats
     stats = db.get_scrape_run_stats()
@@ -934,6 +1011,7 @@ async def scrape_history_page(
             "runs": runs,
             "stats": stats,
             "scraper_names": scraper_names,
+            "scraper_display_names": scraper_display_names,
             "selected_scraper": scraper,
             "selected_status": status,
         },
@@ -948,6 +1026,8 @@ async def scrape_run_detail(request: Request, run_id: int, _: str = Depends(requ
     run = db.get_scrape_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Scrape run not found")
+
+    run["display_name"] = get_scraper_display_name(run["scraper_name"])
 
     return templates(request).TemplateResponse(
         "scrapers/run_detail.html",

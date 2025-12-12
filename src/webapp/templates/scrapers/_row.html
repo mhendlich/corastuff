@@ -9,7 +9,7 @@
     hx-swap="outerHTML"
     {% endif %}>
     <td class="px-6 py-4 whitespace-nowrap">
-        <div class="text-sm font-medium text-white">{{ scraper.name }}</div>
+        <div class="text-sm font-medium text-white">{{ scraper.display_name or scraper.name }}</div>
     </td>
     <td class="px-6 py-4 whitespace-nowrap">
         {% if scraper.status == 'pending' %}

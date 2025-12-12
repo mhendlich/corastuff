@@ -15,6 +15,7 @@ class BaseScraper(ABC):
     """Abstract base class for all scrapers."""
 
     name: str
+    display_name: str
     url: str
 
     def __init__(self, output_dir: Path | None = None):

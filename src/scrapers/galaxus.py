@@ -184,6 +184,7 @@ class GalaxusCHScraper(GalaxusBaseScraper):
     """Scrape Blackroll products from Galaxus.ch (Switzerland)."""
 
     name = "galaxus_ch"
+    display_name = "Galaxus.ch"
     url = "https://www.galaxus.ch/de/brand/blackroll-11375"
     base_url = "https://www.galaxus.ch"
 
@@ -192,5 +193,6 @@ class GalaxusDEScraper(GalaxusBaseScraper):
     """Scrape Blackroll products from Galaxus.de (Germany)."""
 
     name = "galaxus_de"
+    display_name = "Galaxus.de"
     url = "https://www.galaxus.de/de/brand/blackroll-11375"
     base_url = "https://www.galaxus.de"

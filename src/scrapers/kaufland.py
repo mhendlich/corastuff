@@ -21,6 +21,7 @@ class KauflandScraper(BaseScraper):
     """
 
     name = "kaufland"
+    display_name = "Kaufland"
     url = "https://www.kaufland.de/s/?21=793090&search_value=blackroll"
 
     async def scrape(self) -> ScrapeResult:

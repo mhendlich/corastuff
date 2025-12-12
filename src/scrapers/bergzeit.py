@@ -11,6 +11,7 @@ class BergzeitScraper(BaseScraper):
     """Scrape Blackroll products from Bergzeit.de."""
 
     name = "bergzeit"
+    display_name = "Bergzeit"
     url = "https://www.bergzeit.de/marken/blackroll/"
 
     async def extract_products(self, page: Page) -> list[Product]:
