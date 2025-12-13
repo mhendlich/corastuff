@@ -11,3 +11,5 @@
 - Scraper monitoring UI now lives at `/scrapers` (overview) and `/scrapers/history` + `/scrapers/history/:runId` (run history + detail); `/history` is currently an alias to the same history page.
 - `runs:listRecent` now allows up to 200 rows, which keeps the history page usable without adding a dedicated filtered index yet.
 - Scraper Builder runs use queue payload `configOverride` + `dryRun` so the worker can test arbitrary configs without ingesting into `productsLatest`; these runs are created with `requestedBy: "builder"` so `runs:setStatus` intentionally does not update `sources.lastSuccessfulRunId/At`.
+- Scraper Builder now supports multiple saved drafts via Convex tables `scraperBuilderDrafts` + `scraperBuilderState` (keyed by `ownerKey` like `user:default`), and the builder dry-run action takes a `draftId` so logs/results stay attached to the selected draft.
+- Shopify collection tag pages (`/collections/<handle>/<tag>`) often need `constraint=<tag>` on the `products.json` URL; we now support `config.constraint`, and the builder auto-detect sets it from the URL path/query.

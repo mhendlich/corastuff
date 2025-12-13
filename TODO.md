@@ -158,8 +158,8 @@ Old reference: `src/webapp/templates/scrapers/*`, `src/webapp/routes.py` scraper
   - [x] Rebuild/replace Codex-powered scraper builder flow (old: `/scrapers/builder`, `/api/scraper-builder/*`).
   - [x] Streaming logs + cancel + persistence across refresh.
   - [x] Define what “adding a scraper” means in the TS world: save a `sources` config + validate via worker dry-run (no ingest).
-  - [ ] (Nice-to-have) Expand auto-detection/templates (locale prefixes, non-Globetrotter Playwright recipes, etc).
-  - [ ] (Nice-to-have) Allow multiple saved builder drafts per user (instead of singleton `current`).
+  - [x] (Nice-to-have) Expand auto-detection/templates (locale prefixes, non-Globetrotter Playwright recipes, etc).
+  - [x] (Nice-to-have) Allow multiple saved builder drafts per user (instead of singleton `current`).
 
 ## 8) Automation / schedules parity (`/scrapers/schedules`)
 
@@ -183,6 +183,8 @@ Old scrapers are code-defined; new stack is config-driven (`sources.config`).
 - [ ] Validation + “test scrape” action that runs a dry-run and reports errors before enabling schedules (builder dry-run exists, needs generalization).
 
 ## 10) Scraper coverage parity (port Python scrapers → TS or decide hybrid)
+
+- [ ] Use cheerio for extraction instead of regex where it makes sense. Migrate existing scrapers to use it and use it for new scrapers too.
 
 Old sources exist as Python scrapers in `src/scrapers/*.py`. New TS scrapers currently cover only:
 - Shopify collection JSON (`new/packages/scrapers/src/shopifyCollection.ts`)
@@ -230,3 +232,12 @@ Cross-cutting scraper parity tasks:
 ## 12) Operational parity / polish
 
 - [ ] Improve error UX: toasts, inline errors, retry buttons, empty states (match old UX quality).
+- [ ] Wherever it makes sense, use fuse.js for fuzzy matching and search.
+- [ ] Make global Spotlight search real: search canonicals/products/sources (not just nav/actions), jump directly to /products/:id, /prices/
+    product/:sourceSlug/:itemId, /scrapers/history/:runId.
+- [ ] Bulk workflows everywhere: bulk enable/disable sources, bulk schedule edits, bulk relink/unlink, bulk “open in new tabs” actions for
+    retailer/Amazon.
+- [ ] Worker robustness: add timeouts + retry policy for fetches, and classify failures (blocked/timeout/parse) so UI can suggest “switch to
+    Playwright/stealth/headers” automatically.
+- [ ] Automated linking suggestions: upgrade token-based matching to fuzzy (Fuse.js per TODO) plus price-band + vendor/domain heuristics,
+    with “suggest + accept all” flows and confidence thresholds.

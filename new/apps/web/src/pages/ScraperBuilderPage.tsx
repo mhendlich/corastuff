@@ -19,7 +19,7 @@ import {
 } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
-import { IconArrowRight, IconPlayerPlay, IconTrash, IconX } from "@tabler/icons-react";
+import { IconArrowRight, IconCopy, IconPlayerPlay, IconTrash, IconX } from "@tabler/icons-react";
 import type { SourceType } from "@corastuff/shared";
 import { eventSummary } from "../features/dashboard/utils";
 import { fmtAgo, fmtTs } from "../lib/time";
@@ -29,15 +29,18 @@ import {
   runsCancel,
   runsGet,
   runsListEvents,
-  scraperBuilderClearCurrent,
-  scraperBuilderGetCurrent,
   scraperBuilderStartDryRun,
-  scraperBuilderUpsertCurrent,
+  scraperBuilderDraftsCreate,
+  scraperBuilderDraftsDelete,
+  scraperBuilderDraftsGetCurrent,
+  scraperBuilderDraftsList,
+  scraperBuilderDraftsSetCurrent,
+  scraperBuilderDraftsUpsert,
   sourcesUpsert,
   type RunArtifactDoc,
   type RunDoc,
   type RunEventDoc,
-  type ScraperBuilderJobDoc
+  type ScraperBuilderDraftDoc
 } from "../convexFns";
 import classes from "./ScraperBuilderPage.module.css";
 
@@ -92,17 +95,35 @@ function titleCaseFromSlug(slug: string) {
     .join(" ");
 }
 
-function buildShopifyCollectionJsonUrl(u: URL): { url: string; productPathPrefix?: string } | null {
+function normalizedPrefixFromSegments(segments: string[], idx: number): string {
+  if (idx <= 0) return "";
+  return `/${segments.slice(0, idx).join("/")}`;
+}
+
+function buildShopifyCollectionJsonUrl(
+  u: URL
+): { url: string; productPathPrefix?: string; constraint?: string } | null {
   const segments = u.pathname.split("/").filter(Boolean);
   const idx = segments.findIndex((s) => s === "collections");
   if (idx === -1) return null;
   const handle = segments[idx + 1];
   if (!handle || handle === "vendors") return null;
 
-  const prefix = idx > 0 ? `/${segments.slice(0, idx).join("/")}` : "";
+  const prefix = normalizedPrefixFromSegments(segments, idx);
   const jsonUrl = new URL(`${prefix}/collections/${handle}/products.json`, u.origin).toString();
   const productPathPrefix = idx > 0 ? `${prefix}/products/` : undefined;
-  return { url: jsonUrl, ...(productPathPrefix ? { productPathPrefix } : {}) };
+
+  const constraintFromQuery = u.searchParams.get("constraint")?.trim() || "";
+  const constraintFromPath = segments[idx + 2]?.trim() || "";
+  const constraint =
+    constraintFromQuery ||
+    (constraintFromPath && constraintFromPath !== "products.json" ? constraintFromPath : "");
+
+  return {
+    url: jsonUrl,
+    ...(productPathPrefix ? { productPathPrefix } : {}),
+    ...(constraint ? { constraint } : {})
+  };
 }
 
 function detectRecipe(seedUrl: string): { recipe: BuilderRecipe; config: Record<string, unknown>; sourceType: SourceType } | null {
@@ -119,18 +140,37 @@ function detectRecipe(seedUrl: string): { recipe: BuilderRecipe; config: Record<
   }
 
   if (pathname.includes("/collections/vendors")) {
+    const segments = u.pathname.split("/").filter(Boolean);
+    const idx = segments.findIndex((s) => s === "collections");
+    const prefix = idx === -1 ? "" : normalizedPrefixFromSegments(segments, idx);
     return {
       recipe: "shopify_vendor",
       sourceType: "http",
-      config: { baseUrl: u.origin, sourceUrl: seedUrl.trim(), vendorListingUrl: seedUrl.trim() }
+      config: {
+        baseUrl: u.origin,
+        sourceUrl: seedUrl.trim(),
+        vendorListingUrl: seedUrl.trim(),
+        ...(prefix ? { productPathPrefix: `${prefix}/products/` } : {})
+      }
     };
   }
 
   if (pathname.endsWith("/products.json")) {
+    const collection = buildShopifyCollectionJsonUrl(u);
+    const segments = u.pathname.split("/").filter(Boolean);
+    const idx = segments.findIndex((s) => s === "collections");
+    const prefix = idx === -1 ? "" : normalizedPrefixFromSegments(segments, idx);
+    const sourceUrl = prefix ? new URL(`${prefix}/`, u.origin).toString() : u.origin;
     return {
       recipe: "shopify_collection",
       sourceType: "http",
-      config: { baseUrl: u.origin, collectionProductsJsonUrl: seedUrl.trim(), sourceUrl: u.origin }
+      config: {
+        baseUrl: u.origin,
+        collectionProductsJsonUrl: seedUrl.trim(),
+        sourceUrl,
+        ...(collection?.productPathPrefix ? { productPathPrefix: collection.productPathPrefix } : {}),
+        ...(collection?.constraint ? { constraint: collection.constraint } : {})
+      }
     };
   }
 
@@ -143,7 +183,8 @@ function detectRecipe(seedUrl: string): { recipe: BuilderRecipe; config: Record<
         baseUrl: u.origin,
         sourceUrl: seedUrl.trim(),
         collectionProductsJsonUrl: collection.url,
-        ...(collection.productPathPrefix ? { productPathPrefix: collection.productPathPrefix } : {})
+        ...(collection.productPathPrefix ? { productPathPrefix: collection.productPathPrefix } : {}),
+        ...(collection.constraint ? { constraint: collection.constraint } : {})
       }
     };
   }
@@ -166,7 +207,7 @@ function statusTone(status: RunDoc["status"] | "unknown") {
   return { color: "gray", label: "unknown" } as const;
 }
 
-function asDraft(raw: ScraperBuilderJobDoc | null): BuilderDraft {
+function asDraftFromDoc(raw: ScraperBuilderDraftDoc | null): BuilderDraft {
   const d = raw?.draft;
   if (!d || typeof d !== "object" || Array.isArray(d)) return DEFAULT_DRAFT;
   const draft = d as Record<string, unknown>;
@@ -191,16 +232,34 @@ function asDraft(raw: ScraperBuilderJobDoc | null): BuilderDraft {
 export function ScraperBuilderPage(props: { sessionToken: string }) {
   const { sessionToken } = props;
 
-  const job = useQuery(scraperBuilderGetCurrent, { sessionToken }) ?? null;
-  const initialDraft = useMemo(() => asDraft(job), [job]);
-  const [draft, setDraft] = useState<BuilderDraft>(initialDraft);
-  const [hasHydrated, setHasHydrated] = useState(false);
+  const draftsQuery = useQuery(scraperBuilderDraftsList, { sessionToken });
+  const currentQuery = useQuery(scraperBuilderDraftsGetCurrent, { sessionToken });
+  const drafts = draftsQuery ?? [];
+  const current = currentQuery ?? { currentDraftId: null, draft: null };
+
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<BuilderDraft>(DEFAULT_DRAFT);
+  const [draftName, setDraftName] = useState<string>("Draft");
+
+  const createDraft = useMutation(scraperBuilderDraftsCreate);
+  const setCurrentDraft = useMutation(scraperBuilderDraftsSetCurrent);
+  const upsertDraft = useMutation(scraperBuilderDraftsUpsert);
+  const deleteDraft = useMutation(scraperBuilderDraftsDelete);
 
   useEffect(() => {
-    if (hasHydrated) return;
-    setDraft(initialDraft);
-    setHasHydrated(true);
-  }, [initialDraft, hasHydrated]);
+    if (draftsQuery === undefined || currentQuery === undefined) return;
+    if (current.currentDraftId || drafts.length > 0) return;
+    void createDraft({ sessionToken, name: "Draft", draft: DEFAULT_DRAFT }).catch(() => {});
+  }, [createDraft, current.currentDraftId, currentQuery, drafts.length, draftsQuery, sessionToken]);
+
+  useEffect(() => {
+    const doc = current.draft;
+    if (!doc) return;
+    if (activeDraftId === doc._id) return;
+    setActiveDraftId(doc._id);
+    setDraft(asDraftFromDoc(doc));
+    setDraftName(doc.name);
+  }, [activeDraftId, current.draft]);
 
   const [configText, setConfigText] = useState(() => JSON.stringify(draft.config, null, 2));
   const [configError, setConfigError] = useState<string | null>(null);
@@ -209,19 +268,18 @@ export function ScraperBuilderPage(props: { sessionToken: string }) {
     setConfigError(null);
   }, [draft.config]);
 
-  const upsertCurrent = useMutation(scraperBuilderUpsertCurrent);
-  const clearCurrent = useMutation(scraperBuilderClearCurrent);
   const startDryRun = useAction(scraperBuilderStartDryRun);
   const cancelRun = useAction(runsCancel);
   const upsertSource = useMutation(sourcesUpsert);
 
   const [debouncedDraft] = useDebouncedValue(draft, 800);
+  const [debouncedName] = useDebouncedValue(draftName, 800);
   useEffect(() => {
-    if (!hasHydrated) return;
-    void upsertCurrent({ sessionToken, draft: debouncedDraft }).catch(() => {});
-  }, [hasHydrated, debouncedDraft, upsertCurrent, sessionToken]);
+    if (!activeDraftId) return;
+    void upsertDraft({ sessionToken, draftId: activeDraftId, name: debouncedName, draft: debouncedDraft }).catch(() => {});
+  }, [activeDraftId, debouncedDraft, debouncedName, sessionToken, upsertDraft]);
 
-  const runId = job?.runId ?? null;
+  const runId = current.draft?.runId ?? null;
   const skip = "skip" as const;
   const run = useQuery(runsGet, runId ? { sessionToken, runId } : skip) ?? null;
   const events: RunEventDoc[] = useQuery(runsListEvents, runId ? { sessionToken, runId, limit: 200 } : skip) ?? [];
@@ -273,14 +331,41 @@ export function ScraperBuilderPage(props: { sessionToken: string }) {
               variant="default"
               leftSection={<IconTrash size={16} />}
               onClick={async () => {
-                await clearCurrent({ sessionToken });
+                if (!activeDraftId) return;
+                await upsertDraft({ sessionToken, draftId: activeDraftId, name: draftName, draft: DEFAULT_DRAFT, runId: null });
                 setDraft(DEFAULT_DRAFT);
                 setConfigText(JSON.stringify(DEFAULT_DRAFT.config, null, 2));
                 setConfigError(null);
-                notifications.show({ title: "Cleared", message: "Builder state cleared." });
+                notifications.show({ title: "Cleared", message: "Draft reset." });
               }}
             >
               Clear
+            </Button>
+            <Button
+              variant="light"
+              leftSection={<IconCopy size={16} />}
+              onClick={async () => {
+                const name = draftName.trim() ? `Copy of ${draftName.trim()}` : "Copy";
+                const res = await createDraft({ sessionToken, name, draft });
+                notifications.show({ title: "Draft created", message: name });
+                await setCurrentDraft({ sessionToken, draftId: res.draftId });
+              }}
+            >
+              New draft
+            </Button>
+            <Button
+              variant="default"
+              color="red"
+              leftSection={<IconTrash size={16} />}
+              disabled={!activeDraftId || drafts.length <= 1}
+              onClick={async () => {
+                if (!activeDraftId) return;
+                if (!window.confirm("Delete this draft?")) return;
+                const res = await deleteDraft({ sessionToken, draftId: activeDraftId });
+                if (res.deleted) notifications.show({ title: "Draft deleted", message: "Deleted." });
+              }}
+            >
+              Delete
             </Button>
             {runId ? (
               <Button component={Link} to={`/scrapers/history/${runId}`} variant="light" rightSection={<IconArrowRight size={16} />}>
@@ -300,6 +385,35 @@ export function ScraperBuilderPage(props: { sessionToken: string }) {
                     {isActive ? "run active" : "idle"}
                   </Badge>
                 </Group>
+
+                <Select
+                  label="Saved drafts"
+                  value={activeDraftId}
+                  data={drafts.map((d) => ({ value: d._id, label: d.name }))}
+                  placeholder={drafts.length === 0 ? "Loading…" : "Select a draft"}
+                  searchable
+                  allowDeselect={false}
+                  onChange={(v) => {
+                    if (!v) return;
+                    void setCurrentDraft({ sessionToken, draftId: v }).catch((err) => {
+                      notifications.show({
+                        title: "Switch failed",
+                        message: err instanceof Error ? err.message : String(err),
+                        color: "red"
+                      });
+                    });
+                  }}
+                />
+
+                <TextInput
+                  label="Draft name"
+                  placeholder="Cardiofitness – Foam rollers"
+                  value={draftName}
+                  onChange={(e) => setDraftName(e.currentTarget.value)}
+                  onBlur={() => {
+                    setDraftName((prev) => (prev.trim() ? prev : current.draft?.name ?? "Draft"));
+                  }}
+                />
 
                 <TextInput
                   label="Seed URL"
@@ -447,7 +561,8 @@ export function ScraperBuilderPage(props: { sessionToken: string }) {
                         return;
                       }
                       try {
-                        const res = await startDryRun({ sessionToken, draft });
+                        if (!activeDraftId) throw new Error("No draft selected");
+                        const res = await startDryRun({ sessionToken, draftId: activeDraftId, draft });
                         notifications.show({
                           title: "Dry-run started",
                           message: res.queueJobId ? `queued (${res.queueJobId})` : "queued"

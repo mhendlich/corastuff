@@ -65,15 +65,16 @@ const runsSetStatus = makeFunctionReference<
   { ok: boolean }
 >("runs:setStatus");
 
-const builderUpsertCurrent = makeFunctionReference<
+const builderUpsertDraft = makeFunctionReference<
   "mutation",
-  { sessionToken: string; draft: unknown; runId?: string },
-  { ok: boolean; created: boolean }
->("scraperBuilder:upsertCurrent");
+  { sessionToken: string; draftId: string; name?: string; draft: unknown; runId?: string | null },
+  { ok: boolean }
+>("scraperBuilderDrafts:upsertDraft");
 
 export const startDryRun = actionGeneric({
   args: {
     sessionToken: v.string(),
+    draftId: v.id("scraperBuilderDrafts"),
     draft: v.any()
   },
   handler: async (ctx, args) => {
@@ -92,7 +93,12 @@ export const startDryRun = actionGeneric({
       throw new Error("draft.config is required");
     }
 
-    await ctx.runMutation(builderUpsertCurrent, { sessionToken: args.sessionToken, draft: args.draft });
+    await ctx.runMutation(builderUpsertDraft, {
+      sessionToken: args.sessionToken,
+      draftId: args.draftId,
+      draft: args.draft,
+      runId: null
+    });
 
     const { runId } = await ctx.runMutation(runsCreate, {
       sessionToken: args.sessionToken,
@@ -136,9 +142,13 @@ export const startDryRun = actionGeneric({
       payload: { message: "Enqueued builder dry-run", queueJobId }
     });
 
-    await ctx.runMutation(builderUpsertCurrent, { sessionToken: args.sessionToken, draft: args.draft, runId });
+    await ctx.runMutation(builderUpsertDraft, {
+      sessionToken: args.sessionToken,
+      draftId: args.draftId,
+      draft: args.draft,
+      runId
+    });
 
     return { ok: true, runId, queueJobId };
   }
 });
-

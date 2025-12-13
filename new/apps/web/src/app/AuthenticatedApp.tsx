@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "convex/react";
 import { useEffect } from "react";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Box, Container, Paper, Stack, Text, Title } from "@mantine/core";
 import { authLogout, authValidateSession } from "../convexFns";
 import { DashboardPage } from "../pages/DashboardPage";
@@ -21,6 +21,7 @@ import { ScraperBuilderPage } from "../pages/ScraperBuilderPage";
 import { AppLayout } from "./AppLayout";
 import { NotFoundPage } from "./NotFoundPage";
 import { PlaceholderPage } from "./PlaceholderPage";
+import { SessionLoadingScreen } from "./SessionLoadingScreen";
 import backdrop from "./Backdrop.module.css";
 
 export function AuthenticatedApp(props: { sessionToken: string; onLoggedOut: () => void }) {
@@ -34,18 +35,7 @@ export function AuthenticatedApp(props: { sessionToken: string; onLoggedOut: () 
   }, [session, props.onLoggedOut]);
 
   if (session === undefined) {
-    return (
-      <Box className={backdrop.root}>
-        <Container size="sm" py={72}>
-          <Paper withBorder radius="lg" p="xl" className={backdrop.glass}>
-            <Stack gap="xs">
-              <Title order={2}>Corastuff</Title>
-              <Text c="dimmed">Checking session…</Text>
-            </Stack>
-          </Paper>
-        </Container>
-      </Box>
-    );
+    return <SessionLoadingScreen />;
   }
 
   if (session === null) {
@@ -97,7 +87,8 @@ export function AuthenticatedApp(props: { sessionToken: string; onLoggedOut: () 
           <Route path="/scrapers/history/:runId" element={<ScrapeRunDetailPage sessionToken={props.sessionToken} />} />
           <Route path="/scrapers/schedules" element={<PlaceholderPage title="Automation" />} />
           <Route path="/history" element={<ScrapeHistoryPage sessionToken={props.sessionToken} />} />
-          <Route path="/scrapers/builder" element={<ScraperBuilderPage sessionToken={props.sessionToken} />} />
+          <Route path="/builder" element={<ScraperBuilderPage sessionToken={props.sessionToken} />} />
+          <Route path="/scrapers/builder" element={<Navigate to="/builder" replace />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

@@ -22,5 +22,5 @@ export const NAV_ITEMS: Array<{ to: string; label: string; icon: TablerIcon; dis
   { to: "/scrapers", label: "Scrapers", icon: IconRobot },
   { to: "/scrapers/schedules", label: "Automation", icon: IconTools, disabled: true },
   { to: "/history", label: "History", icon: IconHistory },
-  { to: "/scrapers/builder", label: "Scraper Builder", icon: IconWand }
+  { to: "/builder", label: "Scraper Builder", icon: IconWand }
 ];

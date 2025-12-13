@@ -130,6 +130,23 @@ export default defineSchema({
     updatedAt: v.number()
   }).index("by_key", ["key"]),
 
+  scraperBuilderDrafts: defineTable({
+    ownerKey: v.string(),
+    name: v.string(),
+    draft: v.any(),
+    runId: v.optional(v.union(v.id("runs"), v.null())),
+    createdAt: v.number(),
+    updatedAt: v.number()
+  })
+    .index("by_ownerKey", ["ownerKey"])
+    .index("by_ownerKey_updatedAt", ["ownerKey", "updatedAt"]),
+
+  scraperBuilderState: defineTable({
+    ownerKey: v.string(),
+    currentDraftId: v.optional(v.union(v.id("scraperBuilderDrafts"), v.null())),
+    updatedAt: v.number()
+  }).index("by_ownerKey", ["ownerKey"]),
+
   canonicalProducts: defineTable({
     name: v.string(),
     description: v.optional(v.string()),

@@ -231,6 +231,7 @@ function parseShopifyCollectionConfig(
   sourceUrl: string;
   collectionProductsJsonUrl: string;
   productPathPrefix?: string;
+  constraint?: string;
   currency?: string;
 } | null {
   if (typeof config !== "object" || config === null || Array.isArray(config)) return null;
@@ -241,6 +242,7 @@ function parseShopifyCollectionConfig(
 
   const currency = asNonEmptyString(cfg.currency);
   const productPathPrefix = asNonEmptyString(cfg.productPathPrefix);
+  const constraint = asNonEmptyString(cfg.constraint);
   const baseUrl = asNonEmptyString(cfg.baseUrl);
   const sourceUrl =
     asNonEmptyString(cfg.sourceUrl) ??
@@ -262,6 +264,7 @@ function parseShopifyCollectionConfig(
     sourceUrl,
     collectionProductsJsonUrl,
     ...(productPathPrefix ? { productPathPrefix } : {}),
+    ...(constraint ? { constraint } : {}),
     ...(currency ? { currency } : {})
   };
 }
@@ -390,6 +393,7 @@ async function scrapeSource(args: {
       sourceUrl: shopify.sourceUrl,
       collectionProductsJsonUrl: shopify.collectionProductsJsonUrl,
       productPathPrefix: shopify.productPathPrefix,
+      constraint: shopify.constraint,
       currency: shopify.currency,
       log: args.log
     });

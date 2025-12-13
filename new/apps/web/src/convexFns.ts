@@ -231,6 +231,22 @@ export type ScraperBuilderJobDoc = {
   updatedAt: number;
 };
 
+export type ScraperBuilderDraftDoc = {
+  _id: string;
+  _creationTime: number;
+  ownerKey: string;
+  name: string;
+  draft: unknown;
+  runId?: string | null | undefined;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ScraperBuilderDraftState = {
+  currentDraftId: string | null;
+  draft: ScraperBuilderDraftDoc | null;
+};
+
 export type LinkSuggestion = {
   canonical: CanonicalDoc;
   score: number;
@@ -566,9 +582,45 @@ export const scraperBuilderClearCurrent = makeFunctionReference<
 
 export const scraperBuilderStartDryRun = makeFunctionReference<
   "action",
-  { sessionToken: string; draft: unknown },
+  { sessionToken: string; draftId: string; draft: unknown },
   { ok: boolean; runId: string; queueJobId: string | null }
 >("scraperBuilderActions:startDryRun");
+
+export const scraperBuilderDraftsList = makeFunctionReference<
+  "query",
+  { sessionToken: string },
+  ScraperBuilderDraftDoc[]
+>("scraperBuilderDrafts:listDrafts");
+
+export const scraperBuilderDraftsGetCurrent = makeFunctionReference<
+  "query",
+  { sessionToken: string },
+  ScraperBuilderDraftState
+>("scraperBuilderDrafts:getCurrent");
+
+export const scraperBuilderDraftsCreate = makeFunctionReference<
+  "mutation",
+  { sessionToken: string; name?: string; draft: unknown },
+  { ok: boolean; draftId: string }
+>("scraperBuilderDrafts:createDraft");
+
+export const scraperBuilderDraftsSetCurrent = makeFunctionReference<
+  "mutation",
+  { sessionToken: string; draftId: string },
+  { ok: boolean; currentDraftId: string }
+>("scraperBuilderDrafts:setCurrent");
+
+export const scraperBuilderDraftsUpsert = makeFunctionReference<
+  "mutation",
+  { sessionToken: string; draftId: string; name?: string; draft: unknown; runId?: string | null },
+  { ok: boolean }
+>("scraperBuilderDrafts:upsertDraft");
+
+export const scraperBuilderDraftsDelete = makeFunctionReference<
+  "mutation",
+  { sessionToken: string; draftId: string },
+  { ok: boolean; deleted: boolean }
+>("scraperBuilderDrafts:deleteDraft");
 
 export const runsListRecent = makeFunctionReference<
   "query",

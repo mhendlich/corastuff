@@ -6,7 +6,11 @@ export type SessionInfo = {
   expiresAt: number;
 };
 
-export async function requireSession(ctx: { db: any }, sessionToken: string): Promise<SessionInfo> {
+export type SessionIdentity = SessionInfo & {
+  sessionId: any;
+};
+
+export async function requireSession(ctx: { db: any }, sessionToken: string): Promise<SessionIdentity> {
   const token = sessionToken.trim();
   if (!token) {
     throw new Error("Unauthorized");
@@ -22,6 +26,7 @@ export async function requireSession(ctx: { db: any }, sessionToken: string): Pr
   if (typeof session.revokedAt === "number") throw new Error("Unauthorized");
 
   return {
+    sessionId: session._id,
     kind: session.kind,
     label: typeof session.label === "string" ? session.label : null,
     expiresAt: session.expiresAt
@@ -44,4 +49,3 @@ export async function requireSessionForAction(ctx: any, sessionToken: string): P
   if (!session) throw new Error("Unauthorized");
   return session;
 }
-

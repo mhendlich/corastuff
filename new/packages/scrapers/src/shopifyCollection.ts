@@ -139,6 +139,7 @@ export async function scrapeShopifyCollectionProductsJson(options: {
   sourceUrl: string;
   collectionProductsJsonUrl: string;
   productPathPrefix?: string;
+  constraint?: string;
   currency?: string;
   fetchImpl?: typeof fetch;
   headers?: Record<string, string>;
@@ -161,6 +162,7 @@ export async function scrapeShopifyCollectionProductsJson(options: {
 
   const productPathPrefix = asNonEmptyString(options.productPathPrefix) ?? "/products/";
   const normalizedProductPathPrefix = productPathPrefix.startsWith("/") ? productPathPrefix : `/${productPathPrefix}`;
+  const constraint = asNonEmptyString(options.constraint);
 
   const products: DiscoveredProduct[] = [];
   const seen = new Set<string>();
@@ -171,6 +173,7 @@ export async function scrapeShopifyCollectionProductsJson(options: {
       const u = new URL(options.collectionProductsJsonUrl);
       u.searchParams.set("limit", "250");
       u.searchParams.set("page", String(page));
+      if (constraint) u.searchParams.set("constraint", constraint);
       return u.toString();
     })();
     options.log?.(`Loading ${url}`);

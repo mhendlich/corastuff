@@ -9,7 +9,7 @@ export function pageMeta(pathname: string): { title: string; subtitle: string } 
     return { title: "Amazon Pricing", subtitle: "Track undercut and raise opportunities vs retailers." };
   if (pathname.startsWith("/scrapers/history")) return { title: "History", subtitle: "Scrape run history and artifacts." };
   if (pathname.startsWith("/scrapers/schedules")) return { title: "Automation", subtitle: "Coming soon." };
-  if (pathname.startsWith("/scrapers/builder"))
+  if (pathname.startsWith("/builder") || pathname.startsWith("/scrapers/builder"))
     return { title: "Scraper Builder", subtitle: "Build a new source config with a dry-run preview." };
   if (pathname.startsWith("/scrapers")) return { title: "Scrapers", subtitle: "Monitor sources and scrape runs." };
   if (pathname.startsWith("/history")) return { title: "History", subtitle: "Scrape run history and artifacts." };
