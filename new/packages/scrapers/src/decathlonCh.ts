@@ -1,5 +1,6 @@
-import { chromium, type Page } from "playwright";
 import type { DiscoveredProduct } from "@corastuff/shared";
+import type { Page } from "playwright";
+import { withPlaywrightContext, type PlaywrightContextProfile } from "./playwrightContext.js";
 
 function asNonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -151,43 +152,34 @@ async function handleCookieConsent(page: Page) {
 const desktopUserAgent =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
-const stealthInitScript = `
-Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-Object.defineProperty(navigator, 'languages', { get: () => ['de-CH', 'de', 'en'] });
-Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-`;
-
 export async function scrapeDecathlonChBrandPage(options: {
   sourceSlug: string;
   listingUrl: string;
   baseUrl?: string;
   currency?: string;
+  browser?: PlaywrightContextProfile;
   userAgent?: string;
   locale?: string;
   log?: (message: string) => void;
 }): Promise<{ products: DiscoveredProduct[] }> {
   const baseUrl = options.baseUrl ?? new URL(options.listingUrl).origin;
-  const userAgent = options.userAgent ?? desktopUserAgent;
-  const locale = options.locale ?? "de-CH";
+  const userAgent = options.browser?.userAgent ?? options.userAgent ?? desktopUserAgent;
+  const locale = options.browser?.locale ?? options.locale ?? "de-CH";
 
-  const browser = await chromium.launch({
-    headless: true,
-    args: ["--disable-blink-features=AutomationControlled"]
-  });
+  const browser: PlaywrightContextProfile = {
+    ...options.browser,
+    userAgent,
+    locale,
+    viewport: options.browser?.viewport ?? { width: 1920, height: 1080 },
+    stealth: options.browser?.stealth ?? true
+  };
 
-  try {
-    const context = await browser.newContext({
-      viewport: { width: 1920, height: 1080 },
-      locale,
-      userAgent
-    });
-
-    await context.addInitScript(stealthInitScript);
+  return await withPlaywrightContext(browser, async (context) => {
     const page = await context.newPage();
-
-    options.log?.(`Loading ${options.listingUrl}`);
-    await page.goto(options.listingUrl, { waitUntil: "domcontentloaded", timeout: 90_000 });
-    await handleCookieConsent(page);
+    try {
+      options.log?.(`Loading ${options.listingUrl}`);
+      await page.goto(options.listingUrl, { waitUntil: "domcontentloaded", timeout: 90_000 });
+      await handleCookieConsent(page);
 
     try {
       await page.waitForSelector('article:has(a[href*="/p/"])', { timeout: 60_000, state: "attached" });
@@ -243,10 +235,9 @@ export async function scrapeDecathlonChBrandPage(options: {
       });
     }
 
-    await page.close();
-    await context.close();
-    return { products };
-  } finally {
-    await browser.close();
-  }
+      return { products };
+    } finally {
+      await page.close().catch(() => undefined);
+    }
+  });
 }

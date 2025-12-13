@@ -7,3 +7,4 @@ export * from "./bergzeit.js";
 export * from "./bike24.js";
 export * from "./bunert.js";
 export * from "./decathlonCh.js";
+export * from "./playwrightContext.js";

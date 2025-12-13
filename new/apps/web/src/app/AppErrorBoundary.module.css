@@ -1,0 +1,17 @@
+.root {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+}
+
+.details {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow: auto;
+  background: color-mix(in srgb, var(--mantine-color-dark-9) 65%, transparent);
+  border-radius: var(--mantine-radius-md);
+  border: 1px solid color-mix(in srgb, var(--mantine-color-dark-4) 30%, transparent);
+  padding: var(--mantine-spacing-md);
+}
+

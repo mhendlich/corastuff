@@ -14,6 +14,7 @@ import {
   Select,
   SimpleGrid,
   Stack,
+  NumberInput,
   Switch,
   Table,
   Tabs,
@@ -26,6 +27,7 @@ import { notifications } from "@mantine/notifications";
 import { IconLink, IconRefresh, IconSearch, IconUnlink } from "@tabler/icons-react";
 import { PageHeader } from "../components/PageHeader";
 import { Panel } from "../components/Panel";
+import { fuseFilter, makeFuse } from "../lib/fuzzy";
 import { fmtTs } from "../lib/time";
 import text from "../ui/text.module.css";
 import { ProductRow } from "../features/linkProducts/components/ProductRow";
@@ -134,14 +136,11 @@ export function LinkProductsPage(props: { sessionToken: string }) {
   const [sourceFilter, setSourceFilter] = useState("");
   const [showZeroUnlinked, setShowZeroUnlinked] = useState(false);
   const visibleSources = useMemo(() => {
-    const q = sourceFilter.trim().toLowerCase();
     const selected = new Set(selectedSourceSlugs);
     const ordered = [...sources].sort((a, b) => a.displayName.localeCompare(b.displayName));
-    return ordered.filter((s) => {
-      if (q) {
-        const hay = `${s.slug} ${s.displayName}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
+    const fuse = makeFuse(ordered, { keys: ["slug", "displayName"] });
+    const fuzzy = fuseFilter(ordered, fuse, sourceFilter);
+    return fuzzy.filter((s) => {
       const counts = countsBySourceSlug.get(s.slug);
       if (!showZeroUnlinked && !selected.has(s.slug) && counts && counts.unlinked === 0) return false;
       return true;
@@ -293,12 +292,7 @@ export function LinkProductsPage(props: { sessionToken: string }) {
   const pricePointsChrono: PricePointDoc[] = useMemo(() => [...pricePoints].reverse(), [pricePoints]);
 
   const [canonicalQuery, setCanonicalQuery] = useState("");
-  const canonicals =
-    useQuery(canonicalsList, {
-      sessionToken,
-      limit: 80,
-      q: canonicalQuery.trim() ? canonicalQuery.trim() : undefined
-    }) ?? [];
+  const canonicals = useQuery(canonicalsList, { sessionToken, limit: 250 }) ?? [];
 
   const linkForProduct = useQuery(
     linksGetForProduct,
@@ -330,6 +324,20 @@ export function LinkProductsPage(props: { sessionToken: string }) {
     return [canonical, ...canonicals];
   }, [canonicals, linkForProduct?.canonical]);
 
+  const canonicalFuse = useMemo(
+    () => makeFuse(canonicalOptions, { keys: ["name", "description", "_id"] }),
+    [canonicalOptions]
+  );
+
+  const filteredCanonicals: CanonicalDoc[] = useMemo(() => {
+    const fuzzy = fuseFilter(canonicalOptions, canonicalFuse, canonicalQuery, 60);
+    if (!selectedCanonicalId) return fuzzy;
+    const selected = canonicalOptions.find((c) => c._id === selectedCanonicalId);
+    if (!selected) return fuzzy;
+    if (fuzzy.some((c) => c._id === selected._id)) return fuzzy;
+    return [selected, ...fuzzy];
+  }, [canonicalOptions, canonicalFuse, canonicalQuery, selectedCanonicalId]);
+
   useEffect(() => {
     const linkedCanonicalId = linkForProduct?.link.canonicalId;
     if (!keepCanonical && linkedCanonicalId && selectedCanonicalId !== linkedCanonicalId) {
@@ -344,17 +352,44 @@ export function LinkProductsPage(props: { sessionToken: string }) {
   const suggestions: LinkSuggestion[] =
     useQuery(
       linksSuggestCanonicalsForProduct,
-      selectedProductKey ? { sessionToken, sourceSlug: selectedProductKey.sourceSlug, itemId: selectedProductKey.itemId, limit: 6 } : skip
+      selectedProductKey
+        ? { sessionToken, sourceSlug: selectedProductKey.sourceSlug, itemId: selectedProductKey.itemId, limit: 6 }
+        : skip
     ) ?? [];
 
   const [smartSuggestionsNonce, setSmartSuggestionsNonce] = useState(0);
   const [dismissedSuggestionCanonicals, setDismissedSuggestionCanonicals] = useState<Set<string>>(() => new Set());
+  const [smartMinConfidencePct, setSmartMinConfidencePct] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem("linkProducts.smartMinConfidencePct");
+      const n = raw ? Number(raw) : 85;
+      if (!Number.isFinite(n)) return 85;
+      return Math.max(50, Math.min(99, Math.round(n)));
+    } catch {
+      return 85;
+    }
+  });
+  const [smartMinConfidenceAppliedPct, setSmartMinConfidenceAppliedPct] = useState(smartMinConfidencePct);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("linkProducts.smartMinConfidencePct", String(smartMinConfidencePct));
+    } catch {
+      // ignore
+    }
+  }, [smartMinConfidencePct]);
 
   const smartSuggestions: SmartSuggestionGroup[] =
     useQuery(
       linksSmartSuggestions,
       tab === "unlinked" && selectedSourceSlugs.length > 0
-        ? { sessionToken, sourceSlugs: selectedSourceSlugs, limit: 18, nonce: smartSuggestionsNonce }
+        ? {
+            sessionToken,
+            sourceSlugs: selectedSourceSlugs,
+            limit: 18,
+            minConfidence: smartMinConfidenceAppliedPct / 100,
+            nonce: smartSuggestionsNonce
+          }
         : skip
     ) ?? [];
 
@@ -860,7 +895,7 @@ export function LinkProductsPage(props: { sessionToken: string }) {
                             placeholder="Select canonical…"
                             value={selectedCanonicalId}
                             onChange={setSelectedCanonicalId}
-                            data={canonicalOptions.map((c) => ({ value: c._id, label: c.name }))}
+                            data={filteredCanonicals.map((c) => ({ value: c._id, label: c.name }))}
                             searchable
                             nothingFoundMessage="No results"
                           />
@@ -883,12 +918,12 @@ export function LinkProductsPage(props: { sessionToken: string }) {
                                     variant={selectedCanonicalId === s.canonical._id ? "filled" : "light"}
                                     onClick={() => setSelectedCanonicalId(s.canonical._id)}
                                   >
-                                    {s.canonical.name}
+                                    {Math.round(s.confidence * 100)}% · {s.canonical.name}
                                   </Button>
                                 ))}
                               </Group>
                               <Text size="xs" c="dimmed" lineClamp={2}>
-                                {suggestions[0]!.reason}
+                                {suggestions[0] ? `Best match: ${Math.round(suggestions[0].confidence * 100)}% · ${suggestions[0].reason}` : ""}
                               </Text>
                             </Stack>
                           ) : null}
@@ -1018,16 +1053,90 @@ export function LinkProductsPage(props: { sessionToken: string }) {
                 </Text>
               </div>
               <Group gap={8}>
+                <NumberInput
+                  size="sm"
+                  w={160}
+                  min={50}
+                  max={99}
+                  step={1}
+                  clampBehavior="strict"
+                  hideControls
+                  label="Min confidence"
+                  value={smartMinConfidencePct}
+                  onChange={(v) => {
+                    if (typeof v !== "number" || !Number.isFinite(v)) return;
+                    setSmartMinConfidencePct(Math.max(50, Math.min(99, Math.round(v))));
+                  }}
+                />
                 <Button
                   size="sm"
                   variant="light"
                   onClick={() => {
                     setDismissedSuggestionCanonicals(new Set());
+                    setSmartMinConfidenceAppliedPct(smartMinConfidencePct);
                     setSmartSuggestionsNonce((n) => n + 1);
                   }}
                   disabled={selectedSourceSlugs.length === 0}
                 >
                   Rescan
+                </Button>
+                <Button
+                  size="sm"
+                  color="teal"
+                  disabled={bulkLinking || visibleSmartSuggestions.length === 0}
+                  loading={bulkLinking}
+                  onClick={async () => {
+                    if (bulkLinking) return;
+                    const threshold = smartMinConfidenceAppliedPct / 100;
+                    const apply = visibleSmartSuggestions.filter((s) => s.confidence >= threshold);
+                    if (apply.length === 0) {
+                      notifications.show({
+                        title: "Nothing to apply",
+                        message: `No suggestions at or above ${smartMinConfidenceAppliedPct}% confidence.`
+                      });
+                      return;
+                    }
+
+                    setBulkLinking(true);
+                    setLinkError(null);
+                    try {
+                      const processed = new Set<string>();
+                      const dismissed = new Set<string>();
+                      let appliedGroups = 0;
+                      let linked = 0;
+
+                      for (const s of apply) {
+                        const result: LinksBulkLinkResult = await bulkLinkProducts({
+                          sessionToken,
+                          canonicalId: s.canonical._id,
+                          items: s.items.map((it) => ({ sourceSlug: it.sourceSlug, itemId: it.itemId }))
+                        });
+                        for (const p of result.processed) processed.add(`${p.sourceSlug}:${p.itemId}`);
+                        dismissed.add(s.canonical._id);
+                        appliedGroups += 1;
+                        linked += result.created + result.changed + result.unchanged;
+                      }
+
+                      removeManyFromQueueAndAdvance(processed);
+                      setDismissedSuggestionCanonicals((prev) => {
+                        const next = new Set(prev);
+                        for (const id of dismissed) next.add(id);
+                        return next;
+                      });
+                      refresh();
+
+                      notifications.show({
+                        title: "Applied suggestions",
+                        message: `${appliedGroups} groups · ${linked} linked`
+                      });
+                    } catch (err) {
+                      setLinkError(err instanceof Error ? err.message : String(err));
+                    } finally {
+                      setBulkLinking(false);
+                    }
+                  }}
+                >
+                  Apply all
                 </Button>
               </Group>
             </Group>
@@ -1055,14 +1164,14 @@ export function LinkProductsPage(props: { sessionToken: string }) {
                   <Table.Tbody>
                     {visibleSmartSuggestions.map((s) => (
                       <Table.Tr key={s.canonical._id}>
-                        <Table.Td>
-                          <Text fw={650} lineClamp={1}>
-                            {s.canonical.name}
-                          </Text>
-                          <Text size="xs" c="dimmed" lineClamp={1}>
-                            {s.count} items · score {Math.round(s.totalScore)}
-                          </Text>
-                        </Table.Td>
+                      <Table.Td>
+                        <Text fw={650} lineClamp={1}>
+                          {s.canonical.name}
+                        </Text>
+                        <Text size="xs" c="dimmed" lineClamp={1}>
+                          {s.count} items · {Math.round(s.confidence * 100)}% confidence
+                        </Text>
+                      </Table.Td>
                         <Table.Td>
                           <Group gap={6} wrap="wrap">
                             {s.items.slice(0, 8).map((it) => (

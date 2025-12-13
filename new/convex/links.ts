@@ -1,6 +1,7 @@
 import { mutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
 import { requireSession } from "./authz";
+import Fuse from "fuse.js";
 
 type LinkCounts = {
   sourceSlug: string;
@@ -22,6 +23,165 @@ type UnlinkedPage = {
 async function getLatestRunIdForSource(ctx: any, sourceSlug: string) {
   const source = await ctx.db.query("sources").withIndex("by_slug", (q: any) => q.eq("slug", sourceSlug)).unique();
   return source?.lastSuccessfulRunId ?? null;
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.min(Math.max(n, min), max);
+}
+
+function median(values: number[]) {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[mid]!;
+  return (sorted[mid - 1]! + sorted[mid]!) / 2;
+}
+
+function extractHost(url: string | null | undefined) {
+  if (!url) return null;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host.startsWith("www.") ? host.slice(4) : host;
+  } catch {
+    return null;
+  }
+}
+
+function getFirstUrlLikeValue(obj: unknown): string | null {
+  if (!obj || typeof obj !== "object") return null;
+  const record = obj as Record<string, unknown>;
+  const preferredKeys = [
+    "baseUrl",
+    "storeUrl",
+    "sourceUrl",
+    "listingUrl",
+    "collectionProductsJsonUrl",
+    "vendorListingUrl",
+    "url"
+  ];
+  for (const key of preferredKeys) {
+    const value = record[key];
+    if (typeof value === "string" && value.startsWith("http")) return value;
+  }
+  for (const value of Object.values(record)) {
+    if (typeof value === "string" && value.startsWith("http")) return value;
+  }
+  return null;
+}
+
+function hostForSource(source: any) {
+  const configUrl = getFirstUrlLikeValue(source?.config);
+  return extractHost(configUrl);
+}
+
+type CanonicalSummary = {
+  linkedSourceSlugs: Set<string>;
+  linkedHosts: Set<string>;
+  medianPriceByCurrency: Map<string, number>;
+};
+
+async function getCanonicalSummary(
+  ctx: any,
+  canonicalId: string,
+  sourcesBySlug: Map<string, any>,
+  cache: Map<string, CanonicalSummary>
+): Promise<CanonicalSummary> {
+  const cached = cache.get(canonicalId);
+  if (cached) return cached;
+
+  const links = await ctx.db
+    .query("productLinks")
+    .withIndex("by_canonical", (q: any) => q.eq("canonicalId", canonicalId))
+    .collect();
+
+  const linkedSourceSlugs = new Set<string>();
+  const linkedHosts = new Set<string>();
+  const pricesByCurrency = new Map<string, number[]>();
+
+  for (const link of links) {
+    const sourceSlug = `${link.sourceSlug ?? ""}`.trim();
+    if (sourceSlug) linkedSourceSlugs.add(sourceSlug);
+    const source = sourcesBySlug.get(sourceSlug);
+    const sourceHost = hostForSource(source);
+    if (sourceHost) linkedHosts.add(sourceHost);
+
+    const product = await ctx.db
+      .query("productsLatest")
+      .withIndex("by_source_item", (q: any) => q.eq("sourceSlug", sourceSlug).eq("itemId", link.itemId))
+      .unique();
+
+    const urlHost = extractHost(product?.url);
+    if (urlHost) linkedHosts.add(urlHost);
+
+    const price = typeof product?.lastPrice === "number" ? product.lastPrice : null;
+    const currency = typeof product?.currency === "string" ? product.currency : null;
+    if (currency && typeof price === "number" && isFinite(price) && price > 0) {
+      const list = pricesByCurrency.get(currency) ?? [];
+      list.push(price);
+      pricesByCurrency.set(currency, list);
+    }
+  }
+
+  const medianPriceByCurrency = new Map<string, number>();
+  for (const [currency, prices] of pricesByCurrency.entries()) {
+    const m = median(prices);
+    if (typeof m === "number" && isFinite(m) && m > 0) medianPriceByCurrency.set(currency, m);
+  }
+
+  const summary: CanonicalSummary = { linkedSourceSlugs, linkedHosts, medianPriceByCurrency };
+  cache.set(canonicalId, summary);
+  return summary;
+}
+
+function pickCanonicalCurrency(summary: CanonicalSummary, preferred: string | null) {
+  if (preferred && summary.medianPriceByCurrency.has(preferred)) return preferred;
+  if (summary.medianPriceByCurrency.size === 1) return Array.from(summary.medianPriceByCurrency.keys())[0]!;
+  return null;
+}
+
+function scoreCandidate(params: {
+  product: any;
+  productHost: string | null;
+  fuseScore: number | null;
+  canonical: any;
+  summary: CanonicalSummary;
+}) {
+  const { product, productHost, fuseScore, canonical, summary } = params;
+
+  const sourceSlug = `${product.sourceSlug ?? ""}`.trim();
+  if (sourceSlug && summary.linkedSourceSlugs.has(sourceSlug)) {
+    return null;
+  }
+  if (productHost && summary.linkedHosts.has(productHost)) {
+    return null;
+  }
+
+  const base = clamp(1 - clamp(fuseScore ?? 1, 0, 1), 0, 1);
+  const reasons: string[] = [`fuzzy ${Math.round(base * 100)}%`];
+
+  let adjusted = base;
+
+  const currency = typeof product.currency === "string" ? product.currency : null;
+  const price = typeof product.lastPrice === "number" ? product.lastPrice : null;
+  const canonicalCurrency = pickCanonicalCurrency(summary, currency);
+  const canonicalMedian = canonicalCurrency ? summary.medianPriceByCurrency.get(canonicalCurrency) ?? null : null;
+
+  if (typeof price === "number" && typeof canonicalMedian === "number" && canonicalMedian > 0 && isFinite(price)) {
+    const diffPct = Math.abs(price - canonicalMedian) / canonicalMedian;
+    if (diffPct <= 0.05) {
+      adjusted += 0.16;
+      reasons.push("price within 5%");
+    } else if (diffPct <= 0.15) {
+      adjusted += 0.08;
+      reasons.push("price within 15%");
+    } else if (diffPct >= 0.5) {
+      adjusted -= 0.22;
+      reasons.push("price far off");
+    }
+  }
+
+  adjusted = clamp(adjusted, 0, 0.99);
+  return { canonical, confidence: adjusted, reason: reasons.join(" · ") };
 }
 
 function normalizeText(s: string) {
@@ -305,7 +465,8 @@ export const suggestCanonicalsForProduct = queryGeneric({
     sessionToken: v.string(),
     sourceSlug: v.string(),
     itemId: v.string(),
-    limit: v.optional(v.number())
+    limit: v.optional(v.number()),
+    minConfidence: v.optional(v.number())
   },
   handler: async (ctx, args) => {
     await requireSession(ctx, args.sessionToken);
@@ -315,6 +476,7 @@ export const suggestCanonicalsForProduct = queryGeneric({
     if (!itemId) throw new Error("itemId is required");
 
     const limit = Math.min(Math.max(args.limit ?? 6, 1), 12);
+    const minConfidence = clamp(args.minConfidence ?? 0.55, 0, 0.99);
 
     const product = await ctx.db
       .query("productsLatest")
@@ -322,40 +484,48 @@ export const suggestCanonicalsForProduct = queryGeneric({
       .unique();
     if (!product) return [];
 
+    const canonicals = await ctx.db.query("canonicalProducts").order("desc").take(600);
+    if (canonicals.length === 0) return [];
+
+    const fuse = new Fuse(canonicals, {
+      includeScore: true,
+      shouldSort: true,
+      ignoreLocation: true,
+      threshold: 0.42,
+      minMatchCharLength: 3,
+      keys: [
+        { name: "name", weight: 0.85 },
+        { name: "description", weight: 0.15 }
+      ]
+    });
+
+    const sources = await ctx.db.query("sources").withIndex("by_slug").collect();
+    const sourcesBySlug = new Map<string, any>(sources.map((s: any) => [s.slug, s]));
+    const productHost = extractHost(product.url) ?? hostForSource(sourcesBySlug.get(sourceSlug)) ?? null;
+
+    const summaryCache = new Map<string, CanonicalSummary>();
     const productText = `${product.name ?? ""} ${product.itemId ?? ""}`.trim();
-    const productTokens = tokenSet(productText);
-    if (productTokens.size === 0) return [];
+    const results = fuse.search(productText, { limit: 36 });
 
-    const candidates = await ctx.db.query("canonicalProducts").order("desc").take(300);
-
-    const scored: Array<{ canonical: any; score: number; reason: string }> = [];
-
-    for (const canonical of candidates) {
-      const canonicalText = `${canonical.name ?? ""} ${canonical.description ?? ""}`.trim();
-      const canonicalTokens = tokenSet(canonicalText);
-      if (canonicalTokens.size === 0) continue;
-
-      const shared: string[] = [];
-      for (const t of productTokens) {
-        if (canonicalTokens.has(t)) shared.push(t);
-      }
-
-      let score = shared.length;
-      const productNorm = normalizeText(product.name ?? "");
-      const canonicalNorm = normalizeText(canonical.name ?? "");
-      if (productNorm && canonicalNorm.includes(productNorm)) score += 4;
-      if (shared.length === 0 && score === 0) continue;
-
-      score += Math.min(2, Math.floor(shared.length / 3));
-
-      scored.push({
+    const scored: Array<{ canonical: any; confidence: number; reason: string }> = [];
+    for (const r of results) {
+      const canonical = r.item as any;
+      const summary = await getCanonicalSummary(ctx, canonical._id, sourcesBySlug, summaryCache);
+      const candidate = scoreCandidate({
+        product,
+        productHost,
+        fuseScore: typeof r.score === "number" ? r.score : null,
         canonical,
-        score,
-        reason: shared.length > 0 ? `shared tokens: ${shared.slice(0, 5).join(", ")}` : "name similarity"
+        summary
       });
+      if (!candidate) continue;
+      if (candidate.confidence < minConfidence) continue;
+      scored.push(candidate);
     }
 
-    scored.sort((a, b) => b.score - a.score || (a.canonical.name ?? "").localeCompare(b.canonical.name ?? ""));
+    scored.sort(
+      (a, b) => b.confidence - a.confidence || (a.canonical.name ?? "").localeCompare(b.canonical.name ?? "")
+    );
     return scored.slice(0, limit);
   }
 });
@@ -365,6 +535,7 @@ export const smartSuggestions = queryGeneric({
     sessionToken: v.string(),
     sourceSlugs: v.array(v.string()),
     limit: v.optional(v.number()),
+    minConfidence: v.optional(v.number()),
     nonce: v.optional(v.number())
   },
   handler: async (ctx, args) => {
@@ -372,26 +543,39 @@ export const smartSuggestions = queryGeneric({
     void args.nonce;
 
     const limit = Math.min(Math.max(args.limit ?? 18, 1), 40);
+    const minConfidence = clamp(args.minConfidence ?? 0.84, 0, 0.99);
     const rawSourceSlugs = Array.from(new Set(args.sourceSlugs.map((s) => s.trim()).filter(Boolean)));
     const sourceSlugs = rawSourceSlugs.slice(0, 20);
     if (sourceSlugs.length === 0) return [];
     if (rawSourceSlugs.length > sourceSlugs.length) throw new Error(`Too many sourceSlugs (max ${sourceSlugs.length})`);
 
-    const canonicals = await ctx.db.query("canonicalProducts").order("desc").take(300);
-    const canonicalIndex = canonicals.map((canonical) => ({
-      canonical,
-      tokens: tokenSet(`${canonical.name ?? ""} ${canonical.description ?? ""}`),
-      normName: normalizeText(canonical.name ?? "")
-    }));
+    const canonicals = await ctx.db.query("canonicalProducts").order("desc").take(600);
+    if (canonicals.length === 0) return [];
+
+    const fuse = new Fuse(canonicals, {
+      includeScore: true,
+      shouldSort: true,
+      ignoreLocation: true,
+      threshold: 0.42,
+      minMatchCharLength: 3,
+      keys: [
+        { name: "name", weight: 0.85 },
+        { name: "description", weight: 0.15 }
+      ]
+    });
+
+    const sources = await ctx.db.query("sources").withIndex("by_slug").collect();
+    const sourcesBySlug = new Map<string, any>(sources.map((s: any) => [s.slug, s]));
+    const summaryCache = new Map<string, CanonicalSummary>();
 
     const matchesByCanonicalId = new Map<
       string,
       {
         canonical: any;
-        totalScore: number;
+        totalConfidence: number;
         items: Array<{
           product: any;
-          score: number;
+          confidence: number;
           reason: string;
           key: string;
         }>;
@@ -422,27 +606,25 @@ export const smartSuggestions = queryGeneric({
       for (const product of candidates) {
         if (linkedItemIds.has(product.itemId)) continue;
         const productText = `${product.name ?? ""} ${product.itemId ?? ""}`.trim();
-        const productTokens = tokenSet(productText);
-        if (productTokens.size === 0) continue;
+        if (!productText) continue;
 
-        const productNormName = normalizeText(product.name ?? "");
+        const productHost = extractHost(product.url) ?? hostForSource(sourcesBySlug.get(sourceSlug)) ?? null;
+        const results = fuse.search(productText, { limit: 10 });
 
-        let best: { canonical: any; score: number; reason: string } | null = null;
-        for (const entry of canonicalIndex) {
-          if (entry.tokens.size === 0) continue;
-          let shared = 0;
-          const sharedTokens: string[] = [];
-          for (const t of productTokens) {
-            if (entry.tokens.has(t)) {
-              shared += 1;
-              if (sharedTokens.length < 4) sharedTokens.push(t);
-            }
-          }
-          let score = shared;
-          if (productNormName && entry.normName && entry.normName.includes(productNormName)) score += 4;
-          if (score < 2) continue;
-          const reason = sharedTokens.length > 0 ? `shared tokens: ${sharedTokens.join(", ")}` : "name similarity";
-          if (!best || score > best.score) best = { canonical: entry.canonical, score, reason };
+        let best: { canonical: any; confidence: number; reason: string } | null = null;
+        for (const r of results) {
+          const canonical = r.item as any;
+          const summary = await getCanonicalSummary(ctx, canonical._id, sourcesBySlug, summaryCache);
+          const candidate = scoreCandidate({
+            product,
+            productHost,
+            fuseScore: typeof r.score === "number" ? r.score : null,
+            canonical,
+            summary
+          });
+          if (!candidate) continue;
+          if (candidate.confidence < minConfidence) continue;
+          if (!best || candidate.confidence > best.confidence) best = candidate;
         }
 
         if (!best) continue;
@@ -450,13 +632,13 @@ export const smartSuggestions = queryGeneric({
         const canonicalId = best.canonical._id;
         const group = matchesByCanonicalId.get(canonicalId) ?? {
           canonical: best.canonical,
-          totalScore: 0,
+          totalConfidence: 0,
           items: []
         };
         const key = `${sourceSlug}:${product.itemId}`;
         if (!group.items.some((it) => it.key === key)) {
-          group.items.push({ product, score: best.score, reason: best.reason, key });
-          group.totalScore += best.score;
+          group.items.push({ product, confidence: best.confidence, reason: best.reason, key });
+          group.totalConfidence += best.confidence;
         }
         matchesByCanonicalId.set(canonicalId, group);
 
@@ -467,10 +649,14 @@ export const smartSuggestions = queryGeneric({
 
     const groups = Array.from(matchesByCanonicalId.values())
       .map((g) => {
-        g.items.sort((a, b) => b.score - a.score || (b.product.lastSeenAt ?? 0) - (a.product.lastSeenAt ?? 0));
+        g.items.sort(
+          (a, b) => b.confidence - a.confidence || (b.product.lastSeenAt ?? 0) - (a.product.lastSeenAt ?? 0)
+        );
+        const avgConfidence = g.items.length > 0 ? g.totalConfidence / g.items.length : 0;
         return {
           canonical: g.canonical,
-          totalScore: g.totalScore,
+          confidence: clamp(avgConfidence, 0, 0.99),
+          totalConfidence: g.totalConfidence,
           count: g.items.length,
           items: g.items.slice(0, 12).map((it) => ({
             sourceSlug: it.product.sourceSlug,
@@ -479,14 +665,17 @@ export const smartSuggestions = queryGeneric({
             image: it.product.image ?? null,
             lastPrice: typeof it.product.lastPrice === "number" ? it.product.lastPrice : null,
             currency: typeof it.product.currency === "string" ? it.product.currency : null,
-            score: it.score,
+            confidence: it.confidence,
             reason: it.reason
           }))
         };
       })
       .filter((g) => g.count > 0);
 
-    groups.sort((a, b) => b.count - a.count || b.totalScore - a.totalScore);
+    groups.sort(
+      (a, b) =>
+        b.confidence - a.confidence || b.count - a.count || b.totalConfidence - a.totalConfidence
+    );
     return groups.slice(0, limit);
   }
 });
@@ -614,6 +803,64 @@ export const bulkLink = mutationGeneric({
       missing,
       processed,
       missingKeys
+    };
+  }
+});
+
+export const bulkUnlink = mutationGeneric({
+  args: {
+    sessionToken: v.string(),
+    items: v.array(
+      v.object({
+        sourceSlug: v.string(),
+        itemId: v.string()
+      })
+    )
+  },
+  handler: async (ctx, args) => {
+    await requireSession(ctx, args.sessionToken);
+
+    const rawItems = args.items.slice(0, 250);
+    if (rawItems.length !== args.items.length) throw new Error("Too many items (max 250)");
+
+    const seen = new Set<string>();
+    const items = rawItems
+      .map((it) => ({ sourceSlug: it.sourceSlug.trim(), itemId: it.itemId.trim() }))
+      .filter((it) => it.sourceSlug && it.itemId)
+      .filter((it) => {
+        const k = `${it.sourceSlug}:${it.itemId}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+
+    let deleted = 0;
+    let missing = 0;
+    const processed: Array<{ sourceSlug: string; itemId: string; deleted: boolean }> = [];
+
+    for (const { sourceSlug, itemId } of items) {
+      const existing = await ctx.db
+        .query("productLinks")
+        .withIndex("by_source_item", (q) => q.eq("sourceSlug", sourceSlug).eq("itemId", itemId))
+        .unique();
+
+      if (!existing) {
+        missing += 1;
+        processed.push({ sourceSlug, itemId, deleted: false });
+        continue;
+      }
+      await ctx.db.delete(existing._id);
+      deleted += 1;
+      processed.push({ sourceSlug, itemId, deleted: true });
+    }
+
+    return {
+      ok: true,
+      requested: args.items.length,
+      unique: items.length,
+      deleted,
+      missing,
+      processed
     };
   }
 });

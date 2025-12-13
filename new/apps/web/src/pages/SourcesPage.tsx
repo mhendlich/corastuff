@@ -5,6 +5,7 @@ import {
   ActionIcon,
   Badge,
   Button,
+  Checkbox,
   Container,
   Group,
   Loader,
@@ -15,16 +16,18 @@ import {
   TextInput,
   Tooltip
 } from "@mantine/core";
+import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
-import { IconFlask2, IconPencil, IconPlus, IconRefresh, IconSearch, IconTestPipe } from "@tabler/icons-react";
+import { IconFlask2, IconPencil, IconPlus, IconRefresh, IconSearch, IconTestPipe, IconToggleLeft } from "@tabler/icons-react";
+import { EmptyState } from "../components/EmptyState";
 import { PageHeader } from "../components/PageHeader";
+import { InlineError } from "../components/InlineError";
+import { errorMessage } from "../lib/errors";
+import { makeFuse, fuseFilter } from "../lib/fuzzy";
+import { notifyError } from "../lib/notify";
 import { fmtAgo, fmtTs } from "../lib/time";
 import { sourcesList, sourcesSeedDemo, sourcesSetEnabled, sourcesStartDryRun, type SourceDoc } from "../convexFns";
 import classes from "./SourcesPage.module.css";
-
-function normalize(s: string) {
-  return s.toLowerCase().trim();
-}
 
 export function SourcesPage(props: { sessionToken: string }) {
   const navigate = useNavigate();
@@ -37,13 +40,19 @@ export function SourcesPage(props: { sessionToken: string }) {
 
   const [q, setQ] = useState("");
   const [runningForSlug, setRunningForSlug] = useState<string | null>(null);
+  const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
 
-  const filtered: SourceDoc[] = useMemo(() => {
-    const query = normalize(q);
-    const ordered = [...sources].sort((a, b) => a.slug.localeCompare(b.slug));
-    if (!query) return ordered;
-    return ordered.filter((s) => normalize(`${s.slug} ${s.displayName} ${s.type}`).includes(query));
-  }, [q, sources]);
+  const ordered: SourceDoc[] = useMemo(() => [...sources].sort((a, b) => a.slug.localeCompare(b.slug)), [sources]);
+  const fuse = useMemo(
+    () => makeFuse(ordered, { keys: ["slug", "displayName", "type"], includeScore: true }),
+    [ordered]
+  );
+  const filtered: SourceDoc[] = useMemo(() => fuseFilter(ordered, fuse, q), [fuse, ordered, q]);
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((s) => selectedSlugs.has(s.slug));
+  const someFilteredSelected = filtered.some((s) => selectedSlugs.has(s.slug));
 
   const handleSeed = async () => {
     setRunningForSlug("__seed__");
@@ -54,11 +63,7 @@ export function SourcesPage(props: { sessionToken: string }) {
         message: `Inserted ${result.inserted}, updated ${result.updated}.`
       });
     } catch (err) {
-      notifications.show({
-        title: "Seed failed",
-        message: err instanceof Error ? err.message : String(err),
-        color: "red"
-      });
+      notifyError({ title: "Seed failed", error: err });
     } finally {
       setRunningForSlug(null);
     }
@@ -70,11 +75,7 @@ export function SourcesPage(props: { sessionToken: string }) {
       await setEnabled({ sessionToken, slug, enabled });
       notifications.show({ title: "Updated", message: `${slug} ${enabled ? "enabled" : "disabled"}.` });
     } catch (err) {
-      notifications.show({
-        title: "Update failed",
-        message: err instanceof Error ? err.message : String(err),
-        color: "red"
-      });
+      notifyError({ title: "Update failed", error: err });
     } finally {
       setRunningForSlug(null);
     }
@@ -87,14 +88,48 @@ export function SourcesPage(props: { sessionToken: string }) {
       notifications.show({ title: "Test started", message: "Dry-run enqueued. Opening run detail…" });
       navigate(`/scrapers/history/${result.runId}`);
     } catch (err) {
-      notifications.show({
-        title: "Test failed",
-        message: err instanceof Error ? err.message : String(err),
-        color: "red"
-      });
+      notifyError({ title: "Test failed", error: err });
     } finally {
       setRunningForSlug(null);
     }
+  };
+
+  const bulkSetEnabled = async (enabled: boolean) => {
+    if (bulkBusy) return;
+    const slugs = Array.from(selectedSlugs);
+    if (slugs.length === 0) return;
+
+    setBulkBusy(true);
+    setBulkError(null);
+
+    let ok = 0;
+    const failures: Array<{ slug: string; error: string }> = [];
+
+    for (const slug of slugs) {
+      try {
+        await setEnabled({ sessionToken, slug, enabled });
+        ok += 1;
+      } catch (err) {
+        failures.push({ slug, error: errorMessage(err) });
+      }
+    }
+
+    if (failures.length === 0) {
+      notifications.show({
+        title: "Updated sources",
+        message: `${ok} ${enabled ? "enabled" : "disabled"}.`
+      });
+      setSelectedSlugs(new Set());
+    } else {
+      setBulkError(`${failures.length} failed. First: ${failures[0]?.slug} — ${failures[0]?.error ?? "Unknown error"}`);
+      notifications.show({
+        title: "Bulk update partially failed",
+        message: `${ok} updated · ${failures.length} failed`,
+        color: failures.length === slugs.length ? "red" : "yellow"
+      });
+    }
+
+    setBulkBusy(false);
   };
 
   return (
@@ -124,7 +159,7 @@ export function SourcesPage(props: { sessionToken: string }) {
           <TextInput
             value={q}
             onChange={(e) => setQ(e.currentTarget.value)}
-            placeholder="Search slug, name, type…"
+            placeholder="Search slug, name, type… (fuzzy)"
             leftSection={<IconSearch size={16} />}
             w={360}
           />
@@ -133,9 +168,82 @@ export function SourcesPage(props: { sessionToken: string }) {
           </Button>
         </Group>
 
+        {selectedSlugs.size > 0 ? (
+          <Stack gap="sm">
+            {bulkError ? <InlineError title="Bulk update failed" error={bulkError} onRetry={() => void bulkSetEnabled(true)} /> : null}
+            <Group justify="space-between" align="center" wrap="wrap" gap="md">
+              <Text size="sm" c="dimmed">
+                {selectedSlugs.size} selected
+              </Text>
+              <Group gap="sm">
+                <Button
+                  size="sm"
+                  variant="default"
+                  leftSection={<IconToggleLeft size={16} />}
+                  loading={bulkBusy}
+                  disabled={runningForSlug !== null || bulkBusy}
+                  onClick={() => {
+                    modals.openConfirmModal({
+                      title: `Disable ${selectedSlugs.size} sources?`,
+                      centered: true,
+                      labels: { confirm: "Disable", cancel: "Cancel" },
+                      confirmProps: { color: "red" },
+                      children: (
+                        <Text size="sm">
+                          This disables the selected sources and also disables their schedules.
+                        </Text>
+                      ),
+                      onConfirm: () => void bulkSetEnabled(false)
+                    });
+                  }}
+                >
+                  Disable
+                </Button>
+                <Button
+                  size="sm"
+                  leftSection={<IconToggleLeft size={16} />}
+                  loading={bulkBusy}
+                  disabled={runningForSlug !== null || bulkBusy}
+                  onClick={() => void bulkSetEnabled(true)}
+                >
+                  Enable
+                </Button>
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  color="gray"
+                  onClick={() => setSelectedSlugs(new Set())}
+                  disabled={bulkBusy}
+                >
+                  Clear
+                </Button>
+              </Group>
+            </Group>
+          </Stack>
+        ) : null}
+
         <Table withTableBorder withColumnBorders highlightOnHover>
           <Table.Thead>
             <Table.Tr>
+              <Table.Th w={44}>
+                <Checkbox
+                  checked={allFilteredSelected}
+                  indeterminate={!allFilteredSelected && someFilteredSelected}
+                  onChange={(e) => {
+                    const checked = e.currentTarget.checked;
+                    setSelectedSlugs((prev) => {
+                      const next = new Set(prev);
+                      if (checked) {
+                        for (const s of filtered) next.add(s.slug);
+                      } else {
+                        for (const s of filtered) next.delete(s.slug);
+                      }
+                      return next;
+                    });
+                  }}
+                  aria-label="Select all"
+                />
+              </Table.Th>
               <Table.Th w={120}>Enabled</Table.Th>
               <Table.Th>Source</Table.Th>
               <Table.Th w={140}>Type</Table.Th>
@@ -149,9 +257,24 @@ export function SourcesPage(props: { sessionToken: string }) {
               return (
                 <Table.Tr key={s._id}>
                   <Table.Td>
+                    <Checkbox
+                      checked={selectedSlugs.has(s.slug)}
+                      onChange={(e) => {
+                        const checked = e.currentTarget.checked;
+                        setSelectedSlugs((prev) => {
+                          const next = new Set(prev);
+                          if (checked) next.add(s.slug);
+                          else next.delete(s.slug);
+                          return next;
+                        });
+                      }}
+                      aria-label={`Select ${s.slug}`}
+                    />
+                  </Table.Td>
+                  <Table.Td>
                     <Switch
                       checked={s.enabled}
-                      disabled={runningForSlug !== null}
+                      disabled={runningForSlug !== null || bulkBusy}
                       onChange={(e) => void handleToggle(s.slug, e.currentTarget.checked)}
                     />
                   </Table.Td>
@@ -214,12 +337,31 @@ export function SourcesPage(props: { sessionToken: string }) {
         </Table>
 
         {filtered.length === 0 ? (
-          <Text c="dimmed" size="sm">
-            No sources found.
-          </Text>
+          <EmptyState
+            icon={<IconSearch size={22} />}
+            title="No sources found"
+            description={q.trim() ? "Try a different query, or reset filters." : "Create your first source to get started."}
+            action={
+              q.trim() ? (
+                <Button variant="default" onClick={() => setQ("")}>
+                  Reset search
+                </Button>
+              ) : (
+                <Button component={Link} to="/scrapers/sources/new" leftSection={<IconPlus size={16} />}>
+                  New source
+                </Button>
+              )
+            }
+            secondaryAction={
+              q.trim() ? (
+                <Button variant="subtle" color="gray" onClick={() => setQ("")}>
+                  Clear
+                </Button>
+              ) : undefined
+            }
+          />
         ) : null}
       </Stack>
     </Container>
   );
 }
-

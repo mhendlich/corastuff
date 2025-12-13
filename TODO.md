@@ -226,20 +226,20 @@ Remaining old scrapers to cover (parity target):
 - [ ] `upswing`
 
 Cross-cutting scraper parity tasks:
-- [ ] Bring over per-site “browser context” knobs (UA/locale/viewport/stealth init) for protected storefronts (see repo notes in `AGENTS.md`).
-- [ ] Standardize product output: stable `itemId`, `name`, `price`, `currency`, `url`, `imageUrl` (and ensure currency inference matches old behavior).
-- [ ] Ensure image fetching works on bot-protected sites (headers mimicking `<img>` request).
+- [x] Bring over per-site “browser context” knobs (UA/locale/viewport/stealth init) for protected storefronts (see repo notes in `AGENTS.md`).
+- [x] Standardize product output: stable `itemId`, `name`, `price`, `currency`, `url`, `imageUrl` (and ensure currency inference matches old behavior).
+- [x] Ensure image fetching works on bot-protected sites (headers mimicking `<img>` request).
 - [x] Add “products missing stable ID” detection and surface it in linking UI (old: `unlinked_missing_id` warnings).
 
 ## 12) Operational parity / polish
 
-- [ ] Improve error UX: toasts, inline errors, retry buttons, empty states (match old UX quality).
-- [ ] Wherever it makes sense, use fuse.js for fuzzy matching and search.
-- [ ] Make global Spotlight search real: search canonicals/products/sources (not just nav/actions), jump directly to /products/:id, /prices/
+- [x] Improve error UX: toasts, inline errors, retry buttons, empty states (match old UX quality).
+- [x] Wherever it makes sense, use fuse.js for fuzzy matching and search.
+- [x] Make global Spotlight search real: search canonicals/products/sources (not just nav/actions), jump directly to /products/:id, /prices/
     product/:sourceSlug/:itemId, /scrapers/history/:runId.
-- [ ] Bulk workflows everywhere: bulk enable/disable sources, bulk schedule edits, bulk relink/unlink, bulk “open in new tabs” actions for
+- [x] Bulk workflows everywhere: bulk enable/disable sources, bulk schedule edits, bulk relink/unlink, bulk “open in new tabs” actions for
     retailer/Amazon.
-- [ ] Worker robustness: add timeouts + retry policy for fetches, and classify failures (blocked/timeout/parse) so UI can suggest “switch to
+- [x] Worker robustness: add timeouts + retry policy for fetches, and classify failures (blocked/timeout/parse) so UI can suggest “switch to
     Playwright/stealth/headers” automatically.
-- [ ] Automated linking suggestions: upgrade token-based matching to fuzzy (Fuse.js per TODO) plus price-band + vendor/domain heuristics,
+- [x] Automated linking suggestions: upgrade token-based matching to fuzzy (Fuse.js per TODO) plus price-band + vendor/domain heuristics,
     with “suggest + accept all” flows and confidence thresholds.

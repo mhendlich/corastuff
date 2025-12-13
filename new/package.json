@@ -27,5 +27,8 @@
       "esbuild",
       "msgpackr-extract"
     ]
+  },
+  "dependencies": {
+    "fuse.js": "^7.1.0"
   }
 }

@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "convex/react";
-import { Anchor, Badge, Box, Group, Loader, Paper, SimpleGrid, Stack, Table, Text, TextInput } from "@mantine/core";
+import { Anchor, Badge, Box, Button, Checkbox, Group, Loader, Paper, SimpleGrid, Stack, Table, Text, TextInput } from "@mantine/core";
 import { IconAlertTriangle, IconEye, IconSearch, IconTrendingDown, IconTrendingUp } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 import type { AmazonPricingAction, AmazonPricingItem } from "../convexFns";
 import { amazonPricingOpportunities } from "../convexFns";
+import { EmptyState } from "../components/EmptyState";
+import { makeFuse, fuseFilter } from "../lib/fuzzy";
 import { fmtMoney, fmtSignedNumber, fmtSignedPct } from "../lib/format";
 import classes from "./AmazonPricingPage.module.css";
 
@@ -58,12 +60,20 @@ function canonicalLabel(it: AmazonPricingItem) {
 export function AmazonPricingPage(props: { sessionToken: string }) {
   const data = useQuery(amazonPricingOpportunities, { sessionToken: props.sessionToken });
   const [q, setQ] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
 
   const filtered = useMemo(() => {
     if (!data) return null;
-    const needle = q.trim().toLowerCase();
-    if (!needle) return data.items;
-    return data.items.filter((it) => canonicalLabel(it).toLowerCase().includes(needle));
+    const indexed = data.items.map((it) => ({
+      it,
+      canonical: canonicalLabel(it),
+      amazonItemId: it.primaryAmazon?.itemId ?? "",
+      retailer: it.competitorMin?.sourceDisplayName ?? ""
+    }));
+
+    const fuse = makeFuse(indexed, { keys: ["canonical", "amazonItemId", "retailer"] });
+    const out = fuseFilter(indexed, fuse, q);
+    return out.map((r) => r.it);
   }, [data, q]);
 
   const groups = useMemo(() => {
@@ -73,6 +83,15 @@ export function AmazonPricingPage(props: { sessionToken: string }) {
       all: items
     };
   }, [filtered]);
+
+  const allSelected = groups.all.length > 0 && groups.all.every((it) => selected.has(it.canonicalId));
+  const someSelected = groups.all.some((it) => selected.has(it.canonicalId)) && !allSelected;
+
+  const selectedItems = useMemo(() => groups.all.filter((it) => selected.has(it.canonicalId)), [groups.all, selected]);
+
+  const openTabs = (urls: string[], limit: number) => {
+    for (const url of urls.slice(0, limit)) window.open(url, "_blank", "noopener,noreferrer");
+  };
 
   if (!data) {
     return (
@@ -144,12 +163,20 @@ export function AmazonPricingPage(props: { sessionToken: string }) {
           <TextInput
             value={q}
             onChange={(e) => setQ(e.currentTarget.value)}
-            placeholder="Search canonical…"
+            placeholder="Search canonical… (fuzzy)"
             leftSection={<IconSearch size={16} />}
             w={360}
           />
         </Group>
       </Paper>
+
+      {filtered && filtered.length === 0 ? (
+        <EmptyState
+          icon={<IconSearch size={22} />}
+          title="No matches"
+          description="Try a different query."
+        />
+      ) : null}
 
       {groups.undercut.length > 0 ? (
         <Paper withBorder radius="lg" p="lg">
@@ -277,11 +304,72 @@ export function AmazonPricingPage(props: { sessionToken: string }) {
           </Text>
         </Group>
 
+        {selected.size > 0 ? (
+          <Group justify="space-between" align="center" wrap="wrap" gap="md" mb="md">
+            <Text size="sm" c="dimmed">
+              {selected.size} selected
+            </Text>
+            <Group gap="sm" wrap="wrap">
+              <Button
+                size="xs"
+                variant="default"
+                onClick={() => {
+                  const urls = selectedItems
+                    .map((it) => it.primaryAmazon?.url)
+                    .filter((u): u is string => typeof u === "string" && u.trim().length > 0);
+                  if (urls.length) openTabs(urls, 20);
+                }}
+              >
+                Open Amazon
+              </Button>
+              <Button
+                size="xs"
+                variant="default"
+                onClick={() => {
+                  const urls = selectedItems
+                    .map((it) => it.competitorMin?.url)
+                    .filter((u): u is string => typeof u === "string" && u.trim().length > 0);
+                  if (urls.length) openTabs(urls, 20);
+                }}
+              >
+                Open Retailer
+              </Button>
+              <Button
+                size="xs"
+                variant="default"
+                onClick={() => {
+                  const urls = selectedItems.map((it) => `/prices/canonical/${it.canonicalId}`);
+                  if (urls.length) openTabs(urls, 12);
+                }}
+              >
+                Open History
+              </Button>
+              <Button size="xs" variant="subtle" color="gray" onClick={() => setSelected(new Set())}>
+                Clear
+              </Button>
+            </Group>
+          </Group>
+        ) : null}
+
         {groups.all.length ? (
           <Table.ScrollContainer minWidth={980}>
             <Table verticalSpacing="sm" highlightOnHover>
               <Table.Thead>
                 <Table.Tr>
+                  <Table.Th w={44}>
+                    <Checkbox
+                      checked={allSelected}
+                      indeterminate={someSelected}
+                      onChange={(e) => {
+                        const checked = e.currentTarget.checked;
+                        setSelected(() => {
+                          if (!checked) return new Set();
+                          return new Set(groups.all.map((it) => it.canonicalId));
+                        });
+                      }}
+                      aria-label="Select all"
+                    />
+                  </Table.Th>
                   <Table.Th>Canonical</Table.Th>
                   <Table.Th>Status</Table.Th>
                   <Table.Th>Amazon</Table.Th>
@@ -293,6 +381,21 @@ export function AmazonPricingPage(props: { sessionToken: string }) {
               <Table.Tbody>
                 {groups.all.map((it) => (
                   <Table.Tr key={it.canonicalId}>
+                    <Table.Td>
+                      <Checkbox
+                        checked={selected.has(it.canonicalId)}
+                        onChange={(e) => {
+                          const checked = e.currentTarget.checked;
+                          setSelected((prev) => {
+                            const next = new Set(prev);
+                            if (checked) next.add(it.canonicalId);
+                            else next.delete(it.canonicalId);
+                            return next;
+                          });
+                        }}
+                        aria-label={`Select ${it.canonicalId}`}
+                      />
+                    </Table.Td>
                     <Table.Td>
                       <Text fw={600}>{canonicalLabel(it)}</Text>
                     </Table.Td>
@@ -369,4 +472,3 @@ export function AmazonPricingPage(props: { sessionToken: string }) {
     </Stack>
   );
 }
-

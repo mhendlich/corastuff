@@ -253,7 +253,7 @@ export type ScraperBuilderDraftState = {
 
 export type LinkSuggestion = {
   canonical: CanonicalDoc;
-  score: number;
+  confidence: number;
   reason: string;
 };
 
@@ -270,9 +270,19 @@ export type LinksBulkLinkResult = {
   missingKeys: Array<{ sourceSlug: string; itemId: string }>;
 };
 
+export type LinksBulkUnlinkResult = {
+  ok: boolean;
+  requested: number;
+  unique: number;
+  deleted: number;
+  missing: number;
+  processed: Array<{ sourceSlug: string; itemId: string; deleted: boolean }>;
+};
+
 export type SmartSuggestionGroup = {
   canonical: CanonicalDoc;
-  totalScore: number;
+  confidence: number;
+  totalConfidence: number;
   count: number;
   items: Array<{
     sourceSlug: string;
@@ -281,7 +291,7 @@ export type SmartSuggestionGroup = {
     image: StoredImage | null;
     lastPrice: number | null;
     currency: string | null;
-    score: number;
+    confidence: number;
     reason: string;
   }>;
 };
@@ -848,13 +858,13 @@ export const linksGetUnlinkedByKeys = makeFunctionReference<
 
 export const linksSuggestCanonicalsForProduct = makeFunctionReference<
   "query",
-  { sessionToken: string; sourceSlug: string; itemId: string; limit?: number },
+  { sessionToken: string; sourceSlug: string; itemId: string; limit?: number; minConfidence?: number },
   LinkSuggestion[]
 >("links:suggestCanonicalsForProduct");
 
 export const linksSmartSuggestions = makeFunctionReference<
   "query",
-  { sessionToken: string; sourceSlugs: string[]; limit?: number; nonce?: number },
+  { sessionToken: string; sourceSlugs: string[]; limit?: number; minConfidence?: number; nonce?: number },
   SmartSuggestionGroup[]
 >("links:smartSuggestions");
 
@@ -869,6 +879,12 @@ export const linksBulkLink = makeFunctionReference<
   { sessionToken: string; canonicalId: string; items: Array<{ sourceSlug: string; itemId: string }> },
   LinksBulkLinkResult
 >("links:bulkLink");
+
+export const linksBulkUnlink = makeFunctionReference<
+  "mutation",
+  { sessionToken: string; items: Array<{ sourceSlug: string; itemId: string }> },
+  LinksBulkUnlinkResult
+>("links:bulkUnlink");
 
 export const linksUnlink = makeFunctionReference<
   "mutation",

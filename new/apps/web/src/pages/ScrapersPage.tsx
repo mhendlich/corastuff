@@ -20,6 +20,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import { IconCircleX, IconExternalLink, IconPlayerPlay, IconRefresh, IconSearch } from "@tabler/icons-react";
 import { MetricTile } from "../components/MetricTile";
+import { fuseFilter, makeFuse } from "../lib/fuzzy";
 import { fmtAgo, fmtTs } from "../lib/time";
 import text from "../ui/text.module.css";
 import {
@@ -50,10 +51,6 @@ function statusTone(status: ScraperStatus) {
     default:
       return { color: "gray", label: "Idle" } as const;
   }
-}
-
-function normalize(s: string) {
-  return s.toLowerCase().trim();
 }
 
 export function ScrapersPage(props: { sessionToken: string }) {
@@ -141,12 +138,11 @@ export function ScrapersPage(props: { sessionToken: string }) {
   }, [rows]);
 
   const filteredRows = useMemo(() => {
-    const query = normalize(q);
-    return rows.filter((r) => {
+    const fuse = makeFuse(rows, { keys: ["source.slug", "source.displayName"] });
+    const fuzzy = fuseFilter(rows, fuse, q);
+    return fuzzy.filter((r) => {
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
-      if (!query) return true;
-      const hay = `${r.source.slug} ${r.source.displayName}`.toLowerCase();
-      return hay.includes(query);
+      return true;
     });
   }, [rows, q, statusFilter]);
 
@@ -205,7 +201,7 @@ export function ScrapersPage(props: { sessionToken: string }) {
           <TextInput
             value={q}
             onChange={(e) => setQ(e.currentTarget.value)}
-            placeholder="Search sources…"
+            placeholder="Search sources… (fuzzy)"
             leftSection={<IconSearch size={16} />}
             w={360}
           />

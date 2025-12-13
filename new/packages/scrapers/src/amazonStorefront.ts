@@ -1,5 +1,6 @@
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import type { DiscoveredProduct } from "@corastuff/shared";
+import type { Page } from "playwright";
+import { withPlaywrightContext, type PlaywrightContextProfile } from "./playwrightContext.js";
 
 function asNonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -298,39 +299,12 @@ function dedupeProducts(products: DiscoveredProduct[]): DiscoveredProduct[] {
   return Array.from(byAsin.values());
 }
 
-async function withAmazonBrowser<T>(
-  options: {
-    locale: string;
-    userAgent: string;
-  },
-  fn: (browser: Browser, context: BrowserContext) => Promise<T>
-): Promise<T> {
-  const browser = await chromium.launch({
-    headless: true,
-    args: ["--disable-blink-features=AutomationControlled", "--no-sandbox"]
-  });
-  try {
-    const context = await browser.newContext({
-      viewport: { width: 1920, height: 1080 },
-      locale: options.locale,
-      userAgent: options.userAgent
-    });
-    await context.addInitScript(() => {
-      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
-      Object.defineProperty(navigator, "languages", { get: () => ["de-DE", "de", "en-US", "en"] });
-      Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
-    });
-    return await fn(browser, context);
-  } finally {
-    await browser.close();
-  }
-}
-
 export async function scrapeAmazonStorefront(options: {
   sourceSlug: string;
   storeUrl: string;
   baseUrl?: string;
   currency?: string;
+  browser?: PlaywrightContextProfile;
   userAgent?: string;
   locale?: string;
   maxStorePages?: number;
@@ -339,13 +313,22 @@ export async function scrapeAmazonStorefront(options: {
 }): Promise<{ products: DiscoveredProduct[] }> {
   const baseUrl = options.baseUrl ?? new URL(options.storeUrl).origin;
   const userAgent =
+    options.browser?.userAgent ??
     options.userAgent ??
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-  const locale = options.locale ?? "de-DE";
+  const locale = options.browser?.locale ?? options.locale ?? "de-DE";
   const maxStorePages = Math.min(25, Math.max(1, Math.trunc(options.maxStorePages ?? 20)));
   const maxScrollRounds = Math.min(30, Math.max(1, Math.trunc(options.maxScrollRounds ?? 20)));
 
-  return await withAmazonBrowser({ userAgent, locale }, async (_browser, context) => {
+  const browser: PlaywrightContextProfile = {
+    ...options.browser,
+    userAgent,
+    locale,
+    viewport: options.browser?.viewport ?? { width: 1920, height: 1080 },
+    stealth: options.browser?.stealth ?? true
+  };
+
+  return await withPlaywrightContext(browser, async (context) => {
     const page = await context.newPage();
     options.log?.(`Loading Amazon store ${options.storeUrl}`);
     await page.goto(options.storeUrl, { waitUntil: "domcontentloaded", timeout: 90_000 });

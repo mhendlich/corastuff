@@ -23,6 +23,7 @@ import { SourcesPage } from "../pages/SourcesPage";
 import { SourceCreatePage } from "../pages/SourceCreatePage";
 import { SourceEditPage } from "../pages/SourceEditPage";
 import { AppLayout } from "./AppLayout";
+import { AppErrorBoundary } from "./AppErrorBoundary";
 import { NotFoundPage } from "./NotFoundPage";
 import { SessionLoadingScreen } from "./SessionLoadingScreen";
 import backdrop from "./Backdrop.module.css";
@@ -65,40 +66,42 @@ export function AuthenticatedApp(props: { sessionToken: string; onLoggedOut: () 
   };
 
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route element={<AppLayout session={session} onLogout={handleLogout} />}>
-          <Route path="/" element={<DashboardPage sessionToken={props.sessionToken} />} />
-          <Route path="/insights" element={<InsightsPage sessionToken={props.sessionToken} />} />
-          <Route path="/products" element={<ProductsPage sessionToken={props.sessionToken} />} />
-          <Route path="/products/new" element={<CanonicalCreatePage sessionToken={props.sessionToken} />} />
-          <Route path="/products/:canonicalId" element={<CanonicalDetailPage sessionToken={props.sessionToken} />} />
-          <Route path="/products/:canonicalId/edit" element={<CanonicalEditPage sessionToken={props.sessionToken} />} />
-          <Route path="/link" element={<LinkProductsPage sessionToken={props.sessionToken} />} />
-          <Route path="/prices" element={<PricesPage sessionToken={props.sessionToken} />} />
-          <Route
-            path="/prices/product/:sourceSlug/:itemId"
-            element={<ProductPriceDetailPage sessionToken={props.sessionToken} />}
-          />
-          <Route
-            path="/prices/canonical/:canonicalId"
-            element={<CanonicalPriceDetailPage sessionToken={props.sessionToken} />}
-          />
-          <Route path="/amazon-pricing" element={<AmazonPricingPage sessionToken={props.sessionToken} />} />
-          <Route path="/scrapers" element={<ScrapersPage sessionToken={props.sessionToken} />} />
-          <Route path="/scrapers/sources" element={<SourcesPage sessionToken={props.sessionToken} />} />
-          <Route path="/scrapers/sources/new" element={<SourceCreatePage sessionToken={props.sessionToken} />} />
-          <Route path="/scrapers/sources/:slug" element={<SourceEditPage sessionToken={props.sessionToken} />} />
-          <Route path="/scrapers/history" element={<ScrapeHistoryPage sessionToken={props.sessionToken} />} />
-          <Route path="/scrapers/history/:runId" element={<ScrapeRunDetailPage sessionToken={props.sessionToken} />} />
-          <Route path="/schedules" element={<ScraperSchedulesPage sessionToken={props.sessionToken} />} />
-          <Route path="/history" element={<ScrapeHistoryPage sessionToken={props.sessionToken} />} />
-          <Route path="/builder" element={<ScraperBuilderPage sessionToken={props.sessionToken} />} />
-          <Route path="/scrapers/builder" element={<Navigate to="/builder" replace />} />
-          <Route path="/scrapers/schedules" element={<Navigate to="/schedules" replace />} />
-          <Route path="*" element={<NotFoundPage />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <AppErrorBoundary onLogout={() => void handleLogout()}>
+      <BrowserRouter>
+        <Routes>
+          <Route element={<AppLayout session={session} sessionToken={props.sessionToken} onLogout={handleLogout} />}>
+            <Route path="/" element={<DashboardPage sessionToken={props.sessionToken} />} />
+            <Route path="/insights" element={<InsightsPage sessionToken={props.sessionToken} />} />
+            <Route path="/products" element={<ProductsPage sessionToken={props.sessionToken} />} />
+            <Route path="/products/new" element={<CanonicalCreatePage sessionToken={props.sessionToken} />} />
+            <Route path="/products/:canonicalId" element={<CanonicalDetailPage sessionToken={props.sessionToken} />} />
+            <Route path="/products/:canonicalId/edit" element={<CanonicalEditPage sessionToken={props.sessionToken} />} />
+            <Route path="/link" element={<LinkProductsPage sessionToken={props.sessionToken} />} />
+            <Route path="/prices" element={<PricesPage sessionToken={props.sessionToken} />} />
+            <Route
+              path="/prices/product/:sourceSlug/:itemId"
+              element={<ProductPriceDetailPage sessionToken={props.sessionToken} />}
+            />
+            <Route
+              path="/prices/canonical/:canonicalId"
+              element={<CanonicalPriceDetailPage sessionToken={props.sessionToken} />}
+            />
+            <Route path="/amazon-pricing" element={<AmazonPricingPage sessionToken={props.sessionToken} />} />
+            <Route path="/scrapers" element={<ScrapersPage sessionToken={props.sessionToken} />} />
+            <Route path="/scrapers/sources" element={<SourcesPage sessionToken={props.sessionToken} />} />
+            <Route path="/scrapers/sources/new" element={<SourceCreatePage sessionToken={props.sessionToken} />} />
+            <Route path="/scrapers/sources/:slug" element={<SourceEditPage sessionToken={props.sessionToken} />} />
+            <Route path="/scrapers/history" element={<ScrapeHistoryPage sessionToken={props.sessionToken} />} />
+            <Route path="/scrapers/history/:runId" element={<ScrapeRunDetailPage sessionToken={props.sessionToken} />} />
+            <Route path="/schedules" element={<ScraperSchedulesPage sessionToken={props.sessionToken} />} />
+            <Route path="/history" element={<ScrapeHistoryPage sessionToken={props.sessionToken} />} />
+            <Route path="/builder" element={<ScraperBuilderPage sessionToken={props.sessionToken} />} />
+            <Route path="/scrapers/builder" element={<Navigate to="/builder" replace />} />
+            <Route path="/scrapers/schedules" element={<Navigate to="/schedules" replace />} />
+            <Route path="*" element={<NotFoundPage />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </AppErrorBoundary>
   );
 }

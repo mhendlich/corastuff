@@ -21,7 +21,8 @@ import {
   scrapeDecathlonChBrandPage,
   scrapeGlobetrotterBrandPage,
   scrapeShopifyCollectionProductsJson,
-  scrapeShopifyVendorListingProducts
+  scrapeShopifyVendorListingProducts,
+  type PlaywrightContextProfile
 } from "@corastuff/scrapers";
 import type { RunStatus, ScrapeResult, StoredImage } from "@corastuff/shared";
 
@@ -142,6 +143,68 @@ function safeFileId(raw: string) {
   return cleaned.length > 0 ? cleaned : randomUUID();
 }
 
+function normalizeSpaces(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function looksLikeCurrencyCode(value: string | undefined): value is string {
+  const s = asNonEmptyString(value);
+  return !!s && /^[A-Za-z]{3}$/.test(s);
+}
+
+function inferCurrencyFromUrl(url: string | undefined): "CHF" | "EUR" | undefined {
+  if (!url) return undefined;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.endsWith(".ch")) return "CHF";
+    if (
+      host.endsWith(".de") ||
+      host.endsWith(".at") ||
+      host.endsWith(".eu") ||
+      host.endsWith(".fr") ||
+      host.endsWith(".it") ||
+      host.endsWith(".es") ||
+      host.endsWith(".nl")
+    ) {
+      return "EUR";
+    }
+  } catch {
+    // ignore
+  }
+  return undefined;
+}
+
+function normalizeMaybeUrl(baseUrl: string | undefined, value: string | undefined): string | undefined {
+  const raw = asNonEmptyString(value);
+  if (!raw) return undefined;
+  if (!baseUrl) return raw;
+  try {
+    if (raw.startsWith("//")) return `https:${raw}`;
+    if (raw.startsWith("/")) return new URL(raw, baseUrl).toString();
+    return new URL(raw, baseUrl).toString();
+  } catch {
+    return raw;
+  }
+}
+
+function extractConfigCurrency(config: unknown): string | undefined {
+  if (!isPlainObject(config)) return undefined;
+  const raw = asNonEmptyString(config.currency);
+  return looksLikeCurrencyCode(raw) ? raw.toUpperCase() : undefined;
+}
+
+function extractConfigBaseUrl(config: unknown, fallbackSourceUrl: string): string {
+  if (isPlainObject(config)) {
+    const raw = asNonEmptyString(config.baseUrl);
+    if (raw) return raw;
+  }
+  try {
+    return new URL(fallbackSourceUrl).origin;
+  } catch {
+    return "https://example.invalid/";
+  }
+}
+
 async function logToFile(logPath: string, level: string, message: string, payload?: unknown) {
   const ts = new Date().toISOString();
   const suffix = payload === undefined ? "" : ` ${JSON.stringify(payload)}`;
@@ -169,20 +232,64 @@ function urlExt(url: string) {
   }
 }
 
+function acceptLanguageForLocale(locale: string | undefined) {
+  const raw = asNonEmptyString(locale)?.replace("_", "-");
+  if (!raw) return "en-US,en;q=0.9";
+  const base = raw.split("-", 1)[0] ?? raw;
+  if (base.toLowerCase() === raw.toLowerCase()) return `${raw},en-US;q=0.9,en;q=0.8`;
+  return `${raw},${base};q=0.9,en-US;q=0.8,en;q=0.7`;
+}
+
+function registrableDomain(hostname: string) {
+  const parts = hostname.split(".").filter(Boolean);
+  if (parts.length <= 2) return hostname.toLowerCase();
+  const last = parts[parts.length - 1]!;
+  const secondLast = parts[parts.length - 2]!;
+  const thirdLast = parts[parts.length - 3];
+  const twoLevel = new Set(["co", "com", "org", "net", "gov", "ac"]);
+  if (thirdLast && last === "uk" && twoLevel.has(secondLast)) {
+    return `${thirdLast}.${secondLast}.${last}`.toLowerCase();
+  }
+  return `${secondLast}.${last}`.toLowerCase();
+}
+
+function secFetchSite(referer: string, target: string): "same-origin" | "same-site" | "cross-site" | undefined {
+  try {
+    const r = new URL(referer);
+    const t = new URL(target);
+    if (r.origin === t.origin) return "same-origin";
+    if (registrableDomain(r.hostname) === registrableDomain(t.hostname)) return "same-site";
+    return "cross-site";
+  } catch {
+    return undefined;
+  }
+}
+
 async function downloadAndStoreImage(options: {
   imageUrl: string;
   referer: string;
   imagesDir: string;
+  userAgent?: string;
+  acceptLanguage?: string;
 }): Promise<StoredImage | undefined> {
+  const userAgent = asNonEmptyString(options.userAgent) ?? defaultUserAgent;
+  const acceptLanguage = asNonEmptyString(options.acceptLanguage) ?? "en-US,en;q=0.9";
+  const fetchSite = secFetchSite(options.referer, options.imageUrl) ?? "cross-site";
+
   const resp = await fetch(options.imageUrl, {
     redirect: "follow",
     headers: {
       Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+      "Accept-Language": acceptLanguage,
       Referer: options.referer,
-      "User-Agent": defaultUserAgent,
+      "User-Agent": userAgent,
+      DNT: "1",
       "Sec-Fetch-Dest": "image",
       "Sec-Fetch-Mode": "no-cors",
-      "Sec-Fetch-Site": "cross-site"
+      "Sec-Fetch-Site": fetchSite,
+      "Sec-CH-UA": "\"Chromium\";v=\"131\", \"Not_A Brand\";v=\"24\", \"Google Chrome\";v=\"131\"",
+      "Sec-CH-UA-Mobile": "?0",
+      "Sec-CH-UA-Platform": "\"Linux\""
     }
   });
   if (!resp.ok) return undefined;
@@ -232,8 +339,109 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
+function normalizeScrapedProducts(products: ScrapeResult["products"], options: { sourceUrl: string; config: unknown }) {
+  const baseUrl = extractConfigBaseUrl(options.config, options.sourceUrl);
+  const configCurrency = extractConfigCurrency(options.config);
+  const inferredBySourceUrl = inferCurrencyFromUrl(options.sourceUrl);
+  const fallbackCurrency = configCurrency ?? inferredBySourceUrl;
+
+  const out: ScrapeResult["products"] = [];
+  for (const p of products) {
+    const name = normalizeSpaces(p.name ?? "");
+    if (!name) continue;
+
+    const itemIdRaw = asNonEmptyString(p.itemId);
+    const itemId = itemIdRaw ? itemIdRaw.trim() : undefined;
+
+    const url = normalizeMaybeUrl(baseUrl, asNonEmptyString(p.url));
+    const imageUrl = normalizeMaybeUrl(baseUrl, asNonEmptyString(p.imageUrl));
+
+    const price =
+      typeof p.price === "number" && Number.isFinite(p.price) && p.price > 0 ? p.price : undefined;
+
+    const currency =
+      looksLikeCurrencyCode(p.currency) ? p.currency.toUpperCase() : price !== undefined ? fallbackCurrency : undefined;
+
+    out.push({
+      ...p,
+      itemId,
+      name,
+      url,
+      imageUrl,
+      price,
+      currency
+    });
+  }
+
+  return out;
+}
+
 function asNonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parsePlaywrightProfile(cfg: Record<string, unknown>): PlaywrightContextProfile | undefined {
+  const nestedCandidate =
+    (isPlainObject(cfg.playwright) ? cfg.playwright : undefined) ??
+    (isPlainObject(cfg.browserContext) ? cfg.browserContext : undefined) ??
+    (isPlainObject(cfg.browser) ? cfg.browser : undefined) ??
+    (isPlainObject(cfg.context) ? cfg.context : undefined);
+
+  const pickString = (key: string) => asNonEmptyString((nestedCandidate ?? cfg)[key]) ?? asNonEmptyString(cfg[key]);
+  const pickBool = (key: string) => {
+    const v = (nestedCandidate ?? cfg)[key] ?? cfg[key];
+    return typeof v === "boolean" ? v : undefined;
+  };
+
+  const browserTypeRaw = pickString("browserType") ?? pickString("browser_type");
+  const browserType =
+    browserTypeRaw === "chromium" || browserTypeRaw === "firefox" || browserTypeRaw === "webkit"
+      ? browserTypeRaw
+      : undefined;
+
+  const userAgent = pickString("userAgent") ?? pickString("user_agent");
+  const locale = pickString("locale");
+  const stealth = pickBool("stealth") ?? pickBool("stealthInit") ?? pickBool("stealth_init");
+
+  const viewportRaw = (nestedCandidate ?? cfg).viewport ?? cfg.viewport;
+  const viewport =
+    isPlainObject(viewportRaw) &&
+    typeof viewportRaw.width === "number" &&
+    Number.isFinite(viewportRaw.width) &&
+    typeof viewportRaw.height === "number" &&
+    Number.isFinite(viewportRaw.height)
+      ? { width: Math.trunc(viewportRaw.width), height: Math.trunc(viewportRaw.height) }
+      : (() => {
+          const w = (nestedCandidate ?? cfg).viewportWidth ?? cfg.viewportWidth ?? (nestedCandidate ?? cfg).viewport_width ?? cfg.viewport_width;
+          const h = (nestedCandidate ?? cfg).viewportHeight ?? cfg.viewportHeight ?? (nestedCandidate ?? cfg).viewport_height ?? cfg.viewport_height;
+          const width = typeof w === "number" && Number.isFinite(w) ? Math.trunc(w) : undefined;
+          const height = typeof h === "number" && Number.isFinite(h) ? Math.trunc(h) : undefined;
+          if (!width || !height) return undefined;
+          return { width, height };
+        })();
+
+  const initScriptsRaw = (nestedCandidate ?? cfg).initScripts ?? cfg.initScripts;
+  const initScripts =
+    typeof initScriptsRaw === "string"
+      ? [initScriptsRaw]
+      : Array.isArray(initScriptsRaw)
+        ? initScriptsRaw.filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+        : undefined;
+
+  const profile: PlaywrightContextProfile = {
+    ...(browserType ? { browserType } : {}),
+    ...(userAgent ? { userAgent } : {}),
+    ...(locale ? { locale } : {}),
+    ...(viewport ? { viewport } : {}),
+    ...(stealth !== undefined ? { stealth } : {}),
+    ...(initScripts ? { initScripts } : {})
+  };
+
+  return Object.keys(profile).length > 0 ? profile : undefined;
 }
 
 function parseAmazonStorefrontConfig(
@@ -244,6 +452,7 @@ function parseAmazonStorefrontConfig(
   storeUrl: string;
   baseUrl: string;
   currency?: string;
+  browser?: PlaywrightContextProfile;
 } | null {
   if (typeof config !== "object" || config === null || Array.isArray(config)) return null;
   const cfg = config as Record<string, unknown>;
@@ -265,7 +474,8 @@ function parseAmazonStorefrontConfig(
 
   const baseUrl = asNonEmptyString(cfg.baseUrl) ?? u.origin;
   const currency = asNonEmptyString(cfg.currency);
-  return { sourceSlug, storeUrl, baseUrl, ...(currency ? { currency } : {}) };
+  const browser = parsePlaywrightProfile(cfg);
+  return { sourceSlug, storeUrl, baseUrl, ...(currency ? { currency } : {}), ...(browser ? { browser } : {}) };
 }
 
 function parseShopifyCollectionConfig(
@@ -365,6 +575,7 @@ function parseGlobetrotterBrandConfig(
   baseUrl: string;
   listingUrl: string;
   currency?: string;
+  browser?: PlaywrightContextProfile;
 } | null {
   if (typeof config !== "object" || config === null || Array.isArray(config)) return null;
   const cfg = config as Record<string, unknown>;
@@ -392,7 +603,8 @@ function parseGlobetrotterBrandConfig(
   if (!baseUrl) return null;
 
   const currency = asNonEmptyString(cfg.currency);
-  return { sourceSlug, baseUrl, listingUrl, ...(currency ? { currency } : {}) };
+  const browser = parsePlaywrightProfile(cfg);
+  return { sourceSlug, baseUrl, listingUrl, ...(currency ? { currency } : {}), ...(browser ? { browser } : {}) };
 }
 
 function parseArtztProductConfig(
@@ -428,6 +640,7 @@ function parseBunertProductConfig(
   sourceSlug: string;
   productUrl: string;
   currency?: string;
+  browser?: PlaywrightContextProfile;
 } | null {
   if (typeof config !== "object" || config === null || Array.isArray(config)) return null;
   const cfg = config as Record<string, unknown>;
@@ -444,7 +657,8 @@ function parseBunertProductConfig(
   }
 
   const currency = asNonEmptyString(cfg.currency);
-  return { sourceSlug, productUrl, ...(currency ? { currency } : {}) };
+  const browser = parsePlaywrightProfile(cfg);
+  return { sourceSlug, productUrl, ...(currency ? { currency } : {}), ...(browser ? { browser } : {}) };
 }
 
 function parseBergzeitBrandConfig(
@@ -454,6 +668,7 @@ function parseBergzeitBrandConfig(
   sourceSlug: string;
   listingUrl: string;
   baseUrl?: string;
+  browser?: PlaywrightContextProfile;
 } | null {
   if (typeof config !== "object" || config === null || Array.isArray(config)) return null;
   const cfg = config as Record<string, unknown>;
@@ -470,7 +685,8 @@ function parseBergzeitBrandConfig(
   }
 
   const baseUrl = asNonEmptyString(cfg.baseUrl);
-  return { sourceSlug, listingUrl, ...(baseUrl ? { baseUrl } : {}) };
+  const browser = parsePlaywrightProfile(cfg);
+  return { sourceSlug, listingUrl, ...(baseUrl ? { baseUrl } : {}), ...(browser ? { browser } : {}) };
 }
 
 function parseBike24BrandConfig(
@@ -505,6 +721,7 @@ function parseDecathlonChBrandConfig(
   listingUrl: string;
   baseUrl?: string;
   currency?: string;
+  browser?: PlaywrightContextProfile;
 } | null {
   if (typeof config !== "object" || config === null || Array.isArray(config)) return null;
   const cfg = config as Record<string, unknown>;
@@ -522,7 +739,14 @@ function parseDecathlonChBrandConfig(
 
   const baseUrl = asNonEmptyString(cfg.baseUrl);
   const currency = asNonEmptyString(cfg.currency);
-  return { sourceSlug, listingUrl, ...(baseUrl ? { baseUrl } : {}), ...(currency ? { currency } : {}) };
+  const browser = parsePlaywrightProfile(cfg);
+  return {
+    sourceSlug,
+    listingUrl,
+    ...(baseUrl ? { baseUrl } : {}),
+    ...(currency ? { currency } : {}),
+    ...(browser ? { browser } : {})
+  };
 }
 
 const FALLBACK_SOURCE_CONFIGS: Record<string, Record<string, unknown>> = {
@@ -579,6 +803,7 @@ async function scrapeSource(args: {
       storeUrl: amazon.storeUrl,
       baseUrl: amazon.baseUrl,
       currency: amazon.currency,
+      ...(amazon.browser ? { browser: amazon.browser } : {}),
       log: args.log
     });
     return {
@@ -613,6 +838,7 @@ async function scrapeSource(args: {
       sourceSlug: bunert.sourceSlug,
       productUrl: bunert.productUrl,
       currency: bunert.currency,
+      ...(bunert.browser ? { browser: bunert.browser } : {}),
       log: args.log
     });
     return {
@@ -630,6 +856,7 @@ async function scrapeSource(args: {
       sourceSlug: bergzeit.sourceSlug,
       listingUrl: bergzeit.listingUrl,
       baseUrl: bergzeit.baseUrl,
+      ...(bergzeit.browser ? { browser: bergzeit.browser } : {}),
       log: args.log
     });
     return {
@@ -664,6 +891,7 @@ async function scrapeSource(args: {
       listingUrl: globetrotter.listingUrl,
       baseUrl: globetrotter.baseUrl,
       currency: globetrotter.currency,
+      ...(globetrotter.browser ? { browser: globetrotter.browser } : {}),
       log: args.log
     });
     return {
@@ -682,6 +910,7 @@ async function scrapeSource(args: {
       listingUrl: decathlon.listingUrl,
       baseUrl: decathlon.baseUrl,
       currency: decathlon.currency,
+      ...(decathlon.browser ? { browser: decathlon.browser } : {}),
       log: args.log
     });
     return {
@@ -948,20 +1177,30 @@ async function main() {
         await log("info", `Worker started run for ${sourceSlug}`, { workerId });
 
         await throwIfCancelled("before_scrape");
-        const scrapeResult = await scrapeSource({ sourceSlug, config: sourceConfig, log: (m) => {
+        let scrapeResult = await scrapeSource({ sourceSlug, config: sourceConfig, log: (m) => {
           void log("info", m);
         }});
+        const normalizedProducts = normalizeScrapedProducts(scrapeResult.products, {
+          sourceUrl: scrapeResult.sourceUrl,
+          config: sourceConfig
+        });
+        scrapeResult = { ...scrapeResult, products: normalizedProducts, totalProducts: normalizedProducts.length };
         await log("info", "Scrape discovered products", { totalProducts: scrapeResult.totalProducts });
 
         await throwIfCancelled("before_images");
         const imagesDir = path.join(dataDir, "images");
+        const profileForRequests = isPlainObject(sourceConfig) ? parsePlaywrightProfile(sourceConfig) : undefined;
+        const imageUserAgent = profileForRequests?.userAgent ?? defaultUserAgent;
+        const imageAcceptLanguage = acceptLanguageForLocale(profileForRequests?.locale);
         const withImages = await mapWithConcurrency(scrapeResult.products, 8, async (p) => {
           if (!p.imageUrl) return p;
           try {
             const image = await downloadAndStoreImage({
               imageUrl: p.imageUrl,
               referer: scrapeResult.sourceUrl || "https://example.invalid/",
-              imagesDir
+              imagesDir,
+              userAgent: imageUserAgent,
+              acceptLanguage: imageAcceptLanguage
             });
             return image ? { ...p, image } : p;
           } catch (err) {

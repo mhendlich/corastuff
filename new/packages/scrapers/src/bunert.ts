@@ -1,5 +1,6 @@
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import type { DiscoveredProduct } from "@corastuff/shared";
+import type { Page } from "playwright";
+import { withPlaywrightContext, type PlaywrightContextProfile } from "./playwrightContext.js";
 
 function asNonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -38,12 +39,6 @@ function coercePrice(value: unknown): number | undefined {
 
 const desktopUserAgent =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-
-const stealthInitScript = `
-Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-Object.defineProperty(navigator, 'languages', { get: () => ['de-DE', 'de', 'en-US', 'en'] });
-Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-`;
 
 type DataLayerProduct = { name?: unknown; id?: unknown; price?: unknown };
 
@@ -106,78 +101,73 @@ export async function scrapeBunertProductPage(options: {
   sourceSlug: string;
   productUrl: string;
   currency?: string;
+  browser?: PlaywrightContextProfile;
+  userAgent?: string;
+  locale?: string;
   log?: (message: string) => void;
 }): Promise<{ products: DiscoveredProduct[] }> {
-  let browser: Browser | null = null;
-  let context: BrowserContext | null = null;
-  let page: Page | null = null;
+  const userAgent = options.browser?.userAgent ?? options.userAgent ?? desktopUserAgent;
+  const locale = options.browser?.locale ?? options.locale ?? "de-DE";
+  const browser: PlaywrightContextProfile = {
+    ...options.browser,
+    userAgent,
+    locale,
+    viewport: options.browser?.viewport ?? { width: 1400, height: 900 },
+    stealth: options.browser?.stealth ?? true
+  };
 
-  try {
-    browser = await chromium.launch({
-      headless: true,
-      args: ["--disable-blink-features=AutomationControlled"]
-    });
+  return await withPlaywrightContext(browser, async (context) => {
+    const page = await context.newPage();
+    try {
+      options.log?.(`Loading ${options.productUrl}`);
+      await page.goto(options.productUrl, { waitUntil: "domcontentloaded", timeout: 90_000 });
+      await page.waitForTimeout(400);
 
-    context = await browser.newContext({
-      userAgent: desktopUserAgent,
-      locale: "de-DE",
-      viewport: { width: 1400, height: 900 }
-    });
-
-    await context.addInitScript(stealthInitScript);
-    page = await context.newPage();
-
-    options.log?.(`Loading ${options.productUrl}`);
-    await page.goto(options.productUrl, { waitUntil: "domcontentloaded", timeout: 90000 });
-    await page.waitForTimeout(400);
-
-    const baseUrl = (() => {
-      try {
-        return new URL(options.productUrl).origin;
-      } catch {
-        return "https://www.bunert.de/";
-      }
-    })();
-
-    const fromDl = await extractFromDataLayer(page);
-    const titleFallback = (() => {
-      try {
-        return page?.title?.();
-      } catch {
-        return null;
-      }
-    })();
-
-    const rawTitle = titleFallback ? await titleFallback : undefined;
-    const titleName = asNonEmptyString(rawTitle)?.split("|")[0]?.trim();
-    const name = fromDl.name ?? titleName;
-    if (!name) return { products: [] };
-
-    const url = page.url();
-    const imageUrl = normalizeUrl(baseUrl, await safeGetMeta(page, 'meta[property="og:image"]'));
-
-    const currency =
-      asNonEmptyString(fromDl.currency) ??
-      asNonEmptyString(options.currency)?.toUpperCase() ??
-      (fromDl.price !== undefined ? "EUR" : undefined);
-
-    return {
-      products: [
-        {
-          sourceSlug: options.sourceSlug,
-          itemId: fromDl.itemId,
-          name,
-          url,
-          price: fromDl.price,
-          currency: fromDl.price !== undefined ? currency : undefined,
-          imageUrl
+      const baseUrl = (() => {
+        try {
+          return new URL(options.productUrl).origin;
+        } catch {
+          return "https://www.bunert.de/";
         }
-      ]
-    };
-  } finally {
-    await page?.close().catch(() => undefined);
-    await context?.close().catch(() => undefined);
-    await browser?.close().catch(() => undefined);
-  }
-}
+      })();
 
+      const fromDl = await extractFromDataLayer(page);
+      const titleFallback = (() => {
+        try {
+          return page?.title?.();
+        } catch {
+          return null;
+        }
+      })();
+
+      const rawTitle = titleFallback ? await titleFallback : undefined;
+      const titleName = asNonEmptyString(rawTitle)?.split("|")[0]?.trim();
+      const name = fromDl.name ?? titleName;
+      if (!name) return { products: [] };
+
+      const url = page.url();
+      const imageUrl = normalizeUrl(baseUrl, await safeGetMeta(page, 'meta[property="og:image"]'));
+
+      const currency =
+        asNonEmptyString(fromDl.currency) ??
+        asNonEmptyString(options.currency)?.toUpperCase() ??
+        (fromDl.price !== undefined ? "EUR" : undefined);
+
+      return {
+        products: [
+          {
+            sourceSlug: options.sourceSlug,
+            itemId: fromDl.itemId,
+            name,
+            url,
+            price: fromDl.price,
+            currency: fromDl.price !== undefined ? currency : undefined,
+            imageUrl
+          }
+        ]
+      };
+    } finally {
+      await page.close().catch(() => undefined);
+    }
+  });
+}

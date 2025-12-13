@@ -1,5 +1,6 @@
 import type { DiscoveredProduct } from "@corastuff/shared";
-import { chromium, type Page } from "playwright";
+import type { Page } from "playwright";
+import { withPlaywrightContext, type PlaywrightContextProfile } from "./playwrightContext.js";
 
 function asNonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -113,88 +114,96 @@ export async function scrapeBergzeitBrandListing(options: {
   sourceSlug: string;
   listingUrl: string;
   baseUrl?: string;
+  browser?: PlaywrightContextProfile;
   userAgent?: string;
   locale?: string;
   log?: (message: string) => void;
 }): Promise<{ products: DiscoveredProduct[] }> {
   const baseUrl = options.baseUrl ?? new URL(options.listingUrl).origin;
   const userAgent =
+    options.browser?.userAgent ??
     options.userAgent ??
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-  const locale = options.locale ?? "de-DE";
+  const locale = options.browser?.locale ?? options.locale ?? "de-DE";
 
-  const browser = await chromium.launch({ headless: true });
-  try {
-    const context = await browser.newContext({ userAgent, locale });
+  const browser: PlaywrightContextProfile = {
+    ...options.browser,
+    userAgent,
+    locale,
+    viewport: options.browser?.viewport ?? { width: 1920, height: 1080 },
+    stealth: options.browser?.stealth ?? false
+  };
+
+  return await withPlaywrightContext(browser, async (context) => {
     const page = await context.newPage();
+    try {
+      options.log?.(`Loading ${options.listingUrl}`);
+      await page.goto(options.listingUrl, { waitUntil: "domcontentloaded", timeout: 90_000 });
+      await handleCookieConsent(page);
 
-    options.log?.(`Loading ${options.listingUrl}`);
-    await page.goto(options.listingUrl, { waitUntil: "domcontentloaded", timeout: 90_000 });
-    await handleCookieConsent(page);
+      await page.waitForSelector(".product-box", { timeout: 60_000 });
+      await page.waitForSelector(".product-box__image-container img", { timeout: 60_000 });
+      await page.waitForTimeout(400);
 
-    await page.waitForSelector(".product-box", { timeout: 60_000 });
-    await page.waitForSelector(".product-box__image-container img", { timeout: 60_000 });
-    await page.waitForTimeout(400);
+      const raw = await page.$$eval(".product-box", (nodes) =>
+        nodes.map((node) => {
+          const el = node as any;
+          const itemId = el.getAttribute?.("data-item-id") ?? null;
+          const href = el.getAttribute?.("href") ?? el.querySelector?.("a")?.getAttribute?.("href") ?? null;
+          const name = el.querySelector?.(".product-box-content__name")?.textContent ?? null;
+          const priceText = el.querySelector?.(".product-box-content__price")?.textContent ?? null;
+          const container = el.querySelector?.(".product-box__image-container");
+          const containerStyle = container?.getAttribute?.("style") ?? null;
+          const img = container?.querySelector?.("img") ?? el.querySelector?.(".product-box__image-container img");
+          const src = img?.getAttribute?.("src") ?? null;
+          const dataSrc = img?.getAttribute?.("data-src") ?? null;
+          const srcset = img?.getAttribute?.("srcset") ?? null;
+          const dataSrcset = img?.getAttribute?.("data-srcset") ?? null;
+          const source = container?.querySelector?.("source") ?? el.querySelector?.(".product-box__image-container source");
+          const sourceSrcset = source?.getAttribute?.("srcset") ?? source?.getAttribute?.("data-srcset") ?? null;
+          return { itemId, href, name, priceText, src, dataSrc, srcset, dataSrcset, sourceSrcset, containerStyle };
+        })
+      );
 
-    const raw = await page.$$eval(".product-box", (nodes) =>
-      nodes.map((node) => {
-        const el = node as any;
-        const itemId = el.getAttribute?.("data-item-id") ?? null;
-        const href = el.getAttribute?.("href") ?? el.querySelector?.("a")?.getAttribute?.("href") ?? null;
-        const name = el.querySelector?.(".product-box-content__name")?.textContent ?? null;
-        const priceText = el.querySelector?.(".product-box-content__price")?.textContent ?? null;
-        const container = el.querySelector?.(".product-box__image-container");
-        const containerStyle = container?.getAttribute?.("style") ?? null;
-        const img = container?.querySelector?.("img") ?? el.querySelector?.(".product-box__image-container img");
-        const src = img?.getAttribute?.("src") ?? null;
-        const dataSrc = img?.getAttribute?.("data-src") ?? null;
-        const srcset = img?.getAttribute?.("srcset") ?? null;
-        const dataSrcset = img?.getAttribute?.("data-srcset") ?? null;
-        const source = container?.querySelector?.("source") ?? el.querySelector?.(".product-box__image-container source");
-        const sourceSrcset = source?.getAttribute?.("srcset") ?? source?.getAttribute?.("data-srcset") ?? null;
-        return { itemId, href, name, priceText, src, dataSrc, srcset, dataSrcset, sourceSrcset, containerStyle };
-      })
-    );
+      const products: DiscoveredProduct[] = [];
+      const seen = new Set<string>();
 
-    const products: DiscoveredProduct[] = [];
-    const seen = new Set<string>();
+      for (const item of raw) {
+        const name = normalizeSpaces(item.name ?? "");
+        if (!name) continue;
 
-    for (const item of raw) {
-      const name = normalizeSpaces(item.name ?? "");
-      if (!name) continue;
+        const itemId = asNonEmptyString(item.itemId);
+        const url = normalizeUrl(baseUrl, asNonEmptyString(item.href ?? undefined));
+        const { price, currency } = parsePriceText(item.priceText ?? undefined);
 
-      const itemId = asNonEmptyString(item.itemId);
-      const url = normalizeUrl(baseUrl, asNonEmptyString(item.href ?? undefined));
-      const { price, currency } = parsePriceText(item.priceText ?? undefined);
+        const imageRaw =
+          pickBestSrcsetUrl(item.sourceSrcset) ??
+          pickBestSrcsetUrl(item.srcset) ??
+          pickBestSrcsetUrl(item.dataSrcset) ??
+          asNonEmptyString(item.src) ??
+          asNonEmptyString(item.dataSrc) ??
+          extractCssUrl(item.containerStyle ?? undefined) ??
+          undefined;
+        const imageUrl = normalizeUrl(baseUrl, imageRaw);
 
-      const imageRaw =
-        pickBestSrcsetUrl(item.sourceSrcset) ??
-        pickBestSrcsetUrl(item.srcset) ??
-        pickBestSrcsetUrl(item.dataSrcset) ??
-        asNonEmptyString(item.src) ??
-        asNonEmptyString(item.dataSrc) ??
-        extractCssUrl(item.containerStyle ?? undefined) ??
-        undefined;
-      const imageUrl = normalizeUrl(baseUrl, imageRaw);
+        const dedupeKey = itemId ?? url ?? name;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
 
-      const dedupeKey = itemId ?? url ?? name;
-      if (seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
+        products.push({
+          sourceSlug: options.sourceSlug,
+          itemId,
+          name,
+          url,
+          price,
+          currency: price !== undefined ? currency : undefined,
+          imageUrl
+        });
+      }
 
-      products.push({
-        sourceSlug: options.sourceSlug,
-        itemId,
-        name,
-        url,
-        price,
-        currency: price !== undefined ? currency : undefined,
-        imageUrl
-      });
+      return { products };
+    } finally {
+      await page.close().catch(() => undefined);
     }
-
-    await context.close();
-    return { products };
-  } finally {
-    await browser.close();
-  }
+  });
 }

@@ -27,7 +27,7 @@ import { pageMeta } from "./pageMeta";
 import { AppSpotlight } from "./AppSpotlight";
 import classes from "./AppLayout.module.css";
 
-export function AppLayout(props: { session: SessionInfo; onLogout: () => Promise<void> }) {
+export function AppLayout(props: { session: SessionInfo; sessionToken: string; onLogout: () => Promise<void> }) {
   const location = useLocation();
   const meta = pageMeta(location.pathname);
   const [mobileOpened, mobile] = useDisclosure(false);
@@ -166,7 +166,7 @@ export function AppLayout(props: { session: SessionInfo; onLogout: () => Promise
       </AppShell.Navbar>
 
       <AppShell.Main className={classes.main}>
-        <AppSpotlight />
+        <AppSpotlight sessionToken={props.sessionToken} />
         <Outlet />
       </AppShell.Main>
     </AppShell>
