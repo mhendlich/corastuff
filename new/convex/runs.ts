@@ -21,7 +21,7 @@ export const listRecent = queryGeneric({
   },
   handler: async (ctx, args) => {
     await requireSession(ctx, args.sessionToken);
-    const limit = Math.min(Math.max(args.limit ?? 25, 1), 100);
+    const limit = Math.min(Math.max(args.limit ?? 25, 1), 200);
     if (args.sourceSlug) {
       return await ctx.db
         .query("runs")
@@ -169,6 +169,7 @@ export const setStatus = mutationGeneric({
     runId: v.id("runs"),
     status: runStatus,
     productsFound: v.optional(v.number()),
+    missingItemIds: v.optional(v.number()),
     error: v.optional(v.string())
   },
   handler: async (ctx, args) => {
@@ -177,6 +178,9 @@ export const setStatus = mutationGeneric({
     const patch: Record<string, unknown> = { status: args.status };
     if (typeof args.productsFound === "number") {
       patch.productsFound = args.productsFound;
+    }
+    if (typeof args.missingItemIds === "number") {
+      patch.missingItemIds = args.missingItemIds;
     }
     if (typeof args.error === "string") {
       patch.error = args.error;

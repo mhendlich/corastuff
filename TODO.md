@@ -52,11 +52,11 @@ Old reference: `src/webapp/templates/insights.html`, `src/db.py:get_insights_sna
   - [x] Cross-source outliers vs canonical median (requires canonical link graph + latest prices).
   - [x] Coverage snapshots: source coverage + canonical coverage gaps (old: `get_source_coverage_snapshot`, `get_canonical_coverage_gaps`).
   - [x] Scrape health signals: stale sources (by last scrape time) + recent failures window.
-- [ ] Build the Insights UI with the same information architecture and drilldowns as old.
+- [x] Build the Insights UI with the same information architecture and drilldowns as old.
   - [x] Add the `/insights` route + nav + MVP page (tiles + movers + scrape health).
   - [x] Add extremes + outliers sections (new lows/highs + outliers list).
   - [x] Add streak trends + coverage sections.
-  - [ ] Add drilldowns for streak/coverage items.
+  - [x] Add drilldowns for streak/coverage items.
     - [x] Canonical coverage gaps link to canonical detail (`/products/:canonicalId`).
     - [x] Deep-link movers/extremes/streaks/outliers + source unlinked counts into `/link`.
     - [x] Price-history drilldowns (movers/extremes/outliers/streaks → `/prices/product/...`).
@@ -80,27 +80,27 @@ Old reference: `src/webapp/templates/products/*`, routes in `src/webapp/routes.p
 
 Old reference: `src/webapp/templates/link/workbench.html`, `src/webapp/templates/link/_unlinked_list.html`, routes in `src/webapp/routes.py`, DB ops in `src/db.py` (unlinked queries, canonical search, suggestions, bulk link).
 
-- [ ] Multi-source linking workbench
-  - [ ] Left rail: source list with counts, filter box, “All/None”, “Show sources with 0 unlinked”.
-  - [ ] Show “missing IDs” warning/count per source (old: `unlinked_missing_id`).
-  - [ ] “Refresh counts” behavior.
-- [ ] Unlinked queue behavior (center column)
-  - [ ] Search by product name/SKU, scoped to selected sources.
-  - [ ] Pagination + “Load more” with offset/limit (old: `get_unlinked_products_page`).
-  - [ ] Row selection + keyboard/auto-advance UX (old: “Auto-advance to next item”).
-  - [ ] Bulk selection UI (“N selected”) + bulk-link to a canonical.
-- [ ] Linking panel behavior (right column)
-  - [ ] Canonical search/autocomplete (old: `/link/api/canonicals`).
-  - [ ] Suggested canonicals for the selected unlinked product (old: `/link/api/product-suggestions`).
-  - [ ] “Keep selected canonical for next item”.
-  - [ ] Create new canonical + link (pre-filled with selected product name).
-  - [ ] Unlink action + proper redirects.
-- [ ] Smart suggestions section (bottom “Review and apply bulk links”)
-  - [ ] Port fuzzy/ML-ish suggestions (old: `src/db.py:get_link_suggestions`).
-  - [ ] UI: rescan, dismiss suggestion, apply suggested links (bulk), show reasons + scores, show preview images.
-- [ ] API parity for linking actions
-  - [ ] JSON endpoints: link existing, create+link, bulk-link multiple items (old: `/link/api/link`, `/link/api/link-new`, `/link/api/bulk-link`).
-  - [ ] Efficient “get unlinked by keys” query (old: `get_unlinked_products_by_keys`) to support bulk actions.
+- [x] Multi-source linking workbench
+  - [x] Left rail: source list with counts, filter box, “All/None”, “Show sources with 0 unlinked”.
+  - [x] Show “missing IDs” warning/count per source (old: `unlinked_missing_id`).
+  - [x] “Refresh counts” behavior.
+- [x] Unlinked queue behavior (center column)
+  - [x] Search by product name/SKU, scoped to selected sources.
+  - [x] Pagination + “Load more” with offset/limit (old: `get_unlinked_products_page`).
+  - [x] Row selection + keyboard/auto-advance UX (old: “Auto-advance to next item”).
+  - [x] Bulk selection UI (“N selected”) + bulk-link to a canonical.
+- [x] Linking panel behavior (right column)
+  - [x] Canonical search/autocomplete (old: `/link/api/canonicals`).
+  - [x] Suggested canonicals for the selected unlinked product (old: `/link/api/product-suggestions`).
+  - [x] “Keep selected canonical for next item”.
+  - [x] Create new canonical + link (pre-filled with selected product name).
+  - [x] Unlink action + proper redirects.
+- [x] Smart suggestions section (bottom “Review and apply bulk links”)
+  - [x] Implement heuristic suggestions (token overlap + name similarity) (old: `src/db.py:get_link_suggestions`).
+  - [x] UI: rescan, dismiss suggestion, apply suggested links (bulk), show reasons + scores, show preview images.
+- [x] API parity for linking actions
+  - [x] JSON endpoints: link existing, create+link, bulk-link multiple items (old: `/link/api/link`, `/link/api/link-new`, `/link/api/bulk-link`).
+  - [x] Efficient “get unlinked by keys” query (old: `get_unlinked_products_by_keys`) to support bulk actions.
 
 ## 5) Prices parity (`/prices/*`)
 
@@ -128,31 +128,32 @@ Old reference: `src/webapp/templates/prices/*`, `src/db.py:get_latest_products_w
 
 Old reference: `src/webapp/templates/amazon/index.html`, `src/db.py:get_amazon_pricing_items`, `src/db.py:add_manual_amazon_product`.
 
-- [ ] Add data model support for Amazon listings (as sources like `amazon`/`amazon_de` in old) and/or manual ingestion.
-- [ ] Compute Amazon vs retailer opportunities per canonical:
-  - [ ] Classify into: undercut, raise, watch, missing competitors, missing own price (and “missing Amazon” if desired).
-  - [ ] KPI summary: counts + total overprice + potential gain.
-  - [ ] Tables for each action with: canonical, Amazon price/link, cheapest retailer, gap, suggested price.
-- [ ] Build the Amazon Pricing UI to match the old page structure and actions.
+- [x] Add data model support for Amazon listings (as sources like `amazon`/`amazon_de` in old) and/or manual ingestion.
+  - Implemented manual upserts via `new/convex/amazon.ts` (`amazon:ensureAmazonSource`, `amazon:upsertManualListing`) stored in `productsLatest` + `pricePoints` without run semantics.
+- [x] Compute Amazon vs retailer opportunities per canonical:
+  - [x] Classify into: undercut, raise, watch, missing competitors, missing own price (and “missing Amazon” if desired).
+  - [x] KPI summary: counts + total overprice + potential gain.
+  - [x] Tables for each action with: canonical, Amazon price/link, cheapest retailer, gap, suggested price.
+- [x] Build the Amazon Pricing UI to match the old page structure and actions.
 
 ## 7) Scrapers parity (`/scrapers/*`)
 
 Old reference: `src/webapp/templates/scrapers/*`, `src/webapp/routes.py` scraper routes, `src/cli.py` + `src/worker.py` + `src/job_queue.py`, schedules in `src/scheduler.py`.
 
-- [ ] Scrapers overview page
-  - [ ] Status counts (running/queued/failed/completed/idle).
-  - [ ] Table of scrapers/sources with: status, last activity, products count, actions.
-  - [ ] Search + status filter chips.
+- [x] Scrapers overview page
+  - [x] Status counts (running/queued/failed/completed/idle).
+  - [x] Table of scrapers/sources with: status, last activity, products count, actions.
+  - [x] Search + status filter chips.
   - [x] “Run all” action (skip already queued/running). Implemented as `runsActions:requestAll` and exposed in the current minimal Sources UI (until the scrapers page exists).
-  - [ ] Row auto-refresh while active (Convex subscriptions should replace HTMX polling).
-- [ ] Scrape run history page
-  - [ ] KPI stats (total, successful, failed, running, success rate) + “recent failures” callout.
-  - [ ] Filters by scraper + status + limit.
-  - [ ] Table columns: started, duration, products found, error (truncate + link).
-- [ ] Scrape run detail page
-  - [ ] Status badges, started/completed/duration, products found, full error message.
-  - [ ] Artifact links (products.json, run.log, screenshots, html, etc if present).
-  - [ ] Link to “all runs for this scraper”.
+  - [x] Row auto-refresh while active (Convex subscriptions).
+- [x] Scrape run history page
+  - [x] KPI stats (total, successful, failed, running, success rate) + “recent failures” callout.
+  - [x] Filters by scraper + status + limit.
+  - [x] Table columns: started, duration, products found, error (truncate + link).
+- [x] Scrape run detail page
+  - [x] Status badges, started/completed/duration, products found, full error message.
+  - [x] Artifact links (products.json, run.log, screenshots, html, etc if present).
+  - [x] Link to “all runs for this scraper”.
 - [ ] “Add scraper” builder parity
   - [ ] Rebuild/replace Codex-powered scraper builder flow (old: `/scrapers/builder`, `/api/scraper-builder/*`).
   - [ ] Streaming logs + cancel + persistence across refresh.

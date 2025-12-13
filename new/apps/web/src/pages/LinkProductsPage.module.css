@@ -1,0 +1,40 @@
+.shell {
+  display: flex;
+  gap: var(--mantine-spacing-md);
+  align-items: flex-start;
+}
+
+.rail {
+  flex: 0 0 320px;
+  width: 320px;
+}
+
+.queue {
+  flex: 0 0 420px;
+  width: 420px;
+}
+
+.detail {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.scroll {
+  height: 680px;
+}
+
+.sourceRow {
+  cursor: pointer;
+}
+
+.sourceName {
+  min-width: 0;
+}
+
+.queueMeta {
+  display: flex;
+  gap: var(--mantine-spacing-xs);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+

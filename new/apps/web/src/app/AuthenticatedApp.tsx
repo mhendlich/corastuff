@@ -13,6 +13,10 @@ import { CanonicalEditPage } from "../pages/CanonicalEditPage";
 import { PricesPage } from "../pages/PricesPage";
 import { ProductPriceDetailPage } from "../pages/ProductPriceDetailPage";
 import { CanonicalPriceDetailPage } from "../pages/CanonicalPriceDetailPage";
+import { AmazonPricingPage } from "../pages/AmazonPricingPage";
+import { ScrapersPage } from "../pages/ScrapersPage";
+import { ScrapeHistoryPage } from "../pages/ScrapeHistoryPage";
+import { ScrapeRunDetailPage } from "../pages/ScrapeRunDetailPage";
 import { AppLayout } from "./AppLayout";
 import { NotFoundPage } from "./NotFoundPage";
 import { PlaceholderPage } from "./PlaceholderPage";
@@ -86,10 +90,12 @@ export function AuthenticatedApp(props: { sessionToken: string; onLoggedOut: () 
             path="/prices/canonical/:canonicalId"
             element={<CanonicalPriceDetailPage sessionToken={props.sessionToken} />}
           />
-          <Route path="/amazon-pricing" element={<PlaceholderPage title="Amazon Pricing" />} />
-          <Route path="/scrapers" element={<PlaceholderPage title="Scrapers" />} />
+          <Route path="/amazon-pricing" element={<AmazonPricingPage sessionToken={props.sessionToken} />} />
+          <Route path="/scrapers" element={<ScrapersPage sessionToken={props.sessionToken} />} />
+          <Route path="/scrapers/history" element={<ScrapeHistoryPage sessionToken={props.sessionToken} />} />
+          <Route path="/scrapers/history/:runId" element={<ScrapeRunDetailPage sessionToken={props.sessionToken} />} />
           <Route path="/scrapers/schedules" element={<PlaceholderPage title="Automation" />} />
-          <Route path="/history" element={<PlaceholderPage title="History" />} />
+          <Route path="/history" element={<ScrapeHistoryPage sessionToken={props.sessionToken} />} />
           <Route path="/scrapers/builder" element={<PlaceholderPage title="Scraper Builder" />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>

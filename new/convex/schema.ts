@@ -44,6 +44,7 @@ export default defineSchema({
     startedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
     productsFound: v.optional(v.number()),
+    missingItemIds: v.optional(v.number()),
     error: v.optional(v.string()),
     cancelRequested: v.optional(v.boolean()),
     job: v.optional(v.any())

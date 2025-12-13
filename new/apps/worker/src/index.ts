@@ -44,7 +44,7 @@ const runsCreate = makeFunctionReference<
 
 const runsSetStatus = makeFunctionReference<
   "mutation",
-  { sessionToken: string; runId: string; status: RunStatus; productsFound?: number; error?: string },
+  { sessionToken: string; runId: string; status: RunStatus; productsFound?: number; missingItemIds?: number; error?: string },
   { ok: boolean }
 >("runs:setStatus");
 
@@ -659,11 +659,16 @@ async function main() {
         });
 
         await throwIfCancelled("before_ingest");
+        let missingItemIdsForRun: number | undefined = undefined;
         if (convexForRun) {
           const scrapedAt = Date.parse(resultToWrite.scrapedAt);
-          const ingestProducts = resultToWrite.products
-            .filter((p) => typeof p.itemId === "string" && p.itemId.trim())
-            .map((p) => ({
+          const productsWithItemId = resultToWrite.products.filter((p) => typeof p.itemId === "string" && p.itemId.trim());
+          missingItemIdsForRun = Math.max(0, resultToWrite.totalProducts - productsWithItemId.length);
+          if (missingItemIdsForRun > 0) {
+            await log("warn", "Skipped products missing itemId", { missingItemIds: missingItemIdsForRun });
+          }
+
+          const ingestProducts = productsWithItemId.map((p) => ({
               itemId: p.itemId!.trim(),
               name: p.name,
               url: p.url,
@@ -688,7 +693,8 @@ async function main() {
             sessionToken: sessionToken!,
             runId,
             status,
-            productsFound: resultToWrite.totalProducts
+            productsFound: resultToWrite.totalProducts,
+            missingItemIds: missingItemIdsForRun
           });
         }
         await log("info", "Run completed", { productsFound: resultToWrite.totalProducts });

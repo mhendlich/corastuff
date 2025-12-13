@@ -1,4 +1,4 @@
-import { Anchor, Avatar, Group, Stack, Text } from "@mantine/core";
+import { Anchor, Avatar, Checkbox, Group, Stack, Text } from "@mantine/core";
 import { SelectableRow } from "../../../components/SelectableRow";
 import text from "../../../ui/text.module.css";
 import { fmtTs } from "../../../lib/time";
@@ -11,12 +11,26 @@ function money(price: number | null | undefined, currency: string | null | undef
   return `${price} ${c}`.trim();
 }
 
-export function ProductRow(props: { product: ProductLatestDoc; selected: boolean; onClick: () => void }) {
+export function ProductRow(props: {
+  product: ProductLatestDoc;
+  selected: boolean;
+  checked?: boolean;
+  onCheckedChange?: (checked: boolean) => void;
+  onClick: () => void;
+}) {
   const p = props.product;
   return (
     <SelectableRow active={props.selected} onClick={props.onClick}>
       <Group justify="space-between" wrap="nowrap" gap="md">
         <Group wrap="nowrap" gap="md" style={{ minWidth: 0 }}>
+          {props.onCheckedChange ? (
+            <Checkbox
+              checked={!!props.checked}
+              onChange={(e) => props.onCheckedChange?.(e.currentTarget.checked)}
+              onClick={(e) => e.stopPropagation()}
+              aria-label="Select for bulk link"
+            />
+          ) : null}
           <Avatar src={p.image?.mediaUrl ?? undefined} radius="md" size={44}>
             {p.name.slice(0, 1).toUpperCase()}
           </Avatar>

@@ -89,6 +89,7 @@ const runsSetStatus = makeFunctionReference<
     runId: string;
     status: "pending" | "running" | "completed" | "failed" | "canceled";
     productsFound?: number;
+    missingItemIds?: number;
     error?: string;
   },
   { ok: boolean }

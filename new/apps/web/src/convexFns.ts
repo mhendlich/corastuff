@@ -36,6 +36,7 @@ export type RunDoc = {
   startedAt?: number | undefined;
   completedAt?: number | undefined;
   productsFound?: number | undefined;
+  missingItemIds?: number | undefined;
   error?: string | undefined;
   cancelRequested?: boolean | undefined;
   job?: unknown;
@@ -208,7 +209,51 @@ export type LinkCountsBySource = {
   totalProducts: number;
   linked: number;
   unlinked: number;
+  missingItemIds: number;
   truncated: boolean;
+};
+
+export type UnlinkedPage = {
+  items: ProductLatestDoc[];
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+  truncated: boolean;
+};
+
+export type LinkSuggestion = {
+  canonical: CanonicalDoc;
+  score: number;
+  reason: string;
+};
+
+export type LinksBulkLinkResult = {
+  ok: boolean;
+  canonicalId: string;
+  requested: number;
+  unique: number;
+  created: number;
+  changed: number;
+  unchanged: number;
+  missing: number;
+  processed: Array<{ sourceSlug: string; itemId: string }>;
+  missingKeys: Array<{ sourceSlug: string; itemId: string }>;
+};
+
+export type SmartSuggestionGroup = {
+  canonical: CanonicalDoc;
+  totalScore: number;
+  count: number;
+  items: Array<{
+    sourceSlug: string;
+    itemId: string;
+    name: string;
+    image: StoredImage | null;
+    lastPrice: number | null;
+    currency: string | null;
+    score: number;
+    reason: string;
+  }>;
 };
 
 export type ResetAllResult = {
@@ -397,6 +442,63 @@ export type InsightsSnapshot = {
   recentFailures: InsightsFailure[];
 };
 
+export type AmazonPricingAction =
+  | "undercut"
+  | "raise"
+  | "watch"
+  | "missing_amazon"
+  | "missing_competitors"
+  | "missing_own_price";
+
+export type AmazonPricingItem = {
+  canonicalId: string;
+  canonicalName: string | null;
+  canonicalDescription: string | null;
+  action: AmazonPricingAction;
+  amazonListingCount: number;
+  primaryAmazon: {
+    sourceSlug: string;
+    sourceDisplayName: string;
+    itemId: string;
+    name: string | null;
+    price: number | null;
+    currency: string | null;
+    url: string | null;
+  } | null;
+  competitorCount: number;
+  competitorMin: {
+    sourceSlug: string;
+    sourceDisplayName: string;
+    itemId: string;
+    name: string | null;
+    price: number;
+    currency: string | null;
+    url: string | null;
+  } | null;
+  ownPrice: number | null;
+  ownCurrency: string | null;
+  deltaAbs: number | null;
+  deltaPct: number | null;
+  suggestedPrice: number | null;
+  suggestedReason: string | null;
+};
+
+export type AmazonPricingOpportunities = {
+  generatedAt: number;
+  summary: {
+    totalTracked: number;
+    undercutCount: number;
+    raiseCount: number;
+    watchCount: number;
+    missingCompetitorsCount: number;
+    missingOwnPriceCount: number;
+    missingDataCount: number;
+    totalOverprice: number;
+    totalPotentialGain: number;
+  };
+  items: AmazonPricingItem[];
+};
+
 export const authValidateSession = makeFunctionReference<
   "query",
   { sessionToken: string },
@@ -435,6 +537,12 @@ export const runsListRecent = makeFunctionReference<
 >("runs:listRecent");
 
 export const runsListActive = makeFunctionReference<"query", { sessionToken: string }, RunDoc[]>("runs:listActive");
+
+export const runsGet = makeFunctionReference<
+  "query",
+  { sessionToken: string; runId: string },
+  RunDoc | null
+>("runs:get");
 
 export const runsCreate = makeFunctionReference<
   "mutation",
@@ -579,21 +687,51 @@ export const linksGetForProduct = makeFunctionReference<
 
 export const linksCountsBySource = makeFunctionReference<
   "query",
-  { sessionToken: string; sourceSlugs: string[] },
+  { sessionToken: string; sourceSlugs: string[]; nonce?: number },
   LinkCountsBySource[]
 >("links:countsBySource");
 
 export const linksListUnlinked = makeFunctionReference<
   "query",
-  { sessionToken: string; sourceSlug: string; limit?: number; q?: string },
+  { sessionToken: string; sourceSlug: string; limit?: number; q?: string; nonce?: number },
   ProductLatestDoc[]
 >("links:listUnlinked");
+
+export const linksListUnlinkedPage = makeFunctionReference<
+  "query",
+  { sessionToken: string; sourceSlugs: string[]; offset?: number; limit?: number; q?: string; nonce?: number },
+  UnlinkedPage
+>("links:listUnlinkedPage");
+
+export const linksGetUnlinkedByKeys = makeFunctionReference<
+  "query",
+  { sessionToken: string; keys: Array<{ sourceSlug: string; itemId: string }> },
+  ProductLatestDoc[]
+>("links:getUnlinkedByKeys");
+
+export const linksSuggestCanonicalsForProduct = makeFunctionReference<
+  "query",
+  { sessionToken: string; sourceSlug: string; itemId: string; limit?: number },
+  LinkSuggestion[]
+>("links:suggestCanonicalsForProduct");
+
+export const linksSmartSuggestions = makeFunctionReference<
+  "query",
+  { sessionToken: string; sourceSlugs: string[]; limit?: number; nonce?: number },
+  SmartSuggestionGroup[]
+>("links:smartSuggestions");
 
 export const linksLink = makeFunctionReference<
   "mutation",
   { sessionToken: string; canonicalId: string; sourceSlug: string; itemId: string },
   { ok: boolean; id: string; created: boolean; changed: boolean }
 >("links:link");
+
+export const linksBulkLink = makeFunctionReference<
+  "mutation",
+  { sessionToken: string; canonicalId: string; items: Array<{ sourceSlug: string; itemId: string }> },
+  LinksBulkLinkResult
+>("links:bulkLink");
 
 export const linksUnlink = makeFunctionReference<
   "mutation",
@@ -622,6 +760,19 @@ export const dashboardLastScrapes = makeFunctionReference<
 export const insightsSnapshot = makeFunctionReference<"query", { sessionToken: string }, InsightsSnapshot>(
   "insights:snapshot"
 );
+
+export const amazonPricingOpportunities = makeFunctionReference<
+  "query",
+  {
+    sessionToken: string;
+    amazonPrefix?: string;
+    undercutBy?: number;
+    tolerance?: number;
+    onlyWithAmazon?: boolean;
+    canonicalLimit?: number;
+  },
+  AmazonPricingOpportunities
+>("amazon:pricingOpportunities");
 
 export const adminResetAll = makeFunctionReference<
   "action",
