@@ -1,6 +1,7 @@
 import { mutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
 import { requireSession } from "./authz";
+import type { Id } from "./_generated/dataModel";
 
 function defaultDisplayNameForSlug(sourceSlug: string) {
   if (sourceSlug === "amazon") return "Amazon";
@@ -167,8 +168,8 @@ export const upsertManualListing = mutationGeneric({
     if (existing) {
       if (typeof existing.firstSeenAt !== "number") patch.firstSeenAt = existing._creationTime;
       if (nextPrice !== null) {
-        const prevMin = typeof (existing as any).minPrice === "number" ? (existing as any).minPrice : nextPrice;
-        const prevMax = typeof (existing as any).maxPrice === "number" ? (existing as any).maxPrice : nextPrice;
+        const prevMin = typeof existing.minPrice === "number" ? existing.minPrice : nextPrice;
+        const prevMax = typeof existing.maxPrice === "number" ? existing.maxPrice : nextPrice;
         patch.minPrevPrice = prevMin;
         patch.maxPrevPrice = prevMax;
         patch.minPrice = Math.min(prevMin, nextPrice);
@@ -204,7 +205,7 @@ export const upsertManualListing = mutationGeneric({
       await ctx.db.insert("productsLatest", record);
     }
 
-    let pricePointId = null as any;
+    let pricePointId: Id<"pricePoints"> | null = null;
     if (nextPrice !== null && nextCurrency !== null) {
       const id = await ctx.db.insert("pricePoints", {
         sourceSlug,

@@ -1,6 +1,7 @@
 import { queryGeneric } from "convex/server";
 import { v } from "convex/values";
 import { requireSession } from "./authz";
+import type { Id } from "./_generated/dataModel";
 
 type Mover = {
   sourceSlug: string;
@@ -32,7 +33,7 @@ type Extreme = {
 };
 
 type Outlier = {
-  canonicalId: string;
+  canonicalId: Id<"canonicalProducts">;
   canonicalName: string | null;
   currency: string;
   medianPrice: number;
@@ -71,7 +72,7 @@ type SourceCoverage = {
 };
 
 type CanonicalCoverageGap = {
-  canonicalId: string;
+  canonicalId: Id<"canonicalProducts">;
   name: string;
   createdAt: number;
   linkCount: number;
@@ -217,9 +218,9 @@ export const snapshot = queryGeneric({
           });
         }
 
-        const streakKind = (p as any).streakKind as "drop" | "rise" | null | undefined;
-        const streakTrendPct = (p as any).streakTrendPct as number | null | undefined;
-        const streakPrices = (p as any).streakPrices as number[] | null | undefined;
+        const streakKind = p.streakKind;
+        const streakTrendPct = p.streakTrendPct;
+        const streakPrices = p.streakPrices;
         if (
           (streakKind === "drop" || streakKind === "rise") &&
           typeof streakTrendPct === "number" &&
@@ -242,13 +243,13 @@ export const snapshot = queryGeneric({
           else sustainedRises.push(trend);
         }
 
-        const minPrevPrice = typeof (p as any).minPrevPrice === "number" ? ((p as any).minPrevPrice as number) : null;
-        const maxPrevPrice = typeof (p as any).maxPrevPrice === "number" ? ((p as any).maxPrevPrice as number) : null;
+        const minPrevPrice = typeof p.minPrevPrice === "number" ? p.minPrevPrice : null;
+        const maxPrevPrice = typeof p.maxPrevPrice === "number" ? p.maxPrevPrice : null;
 
-        const minPrice = typeof (p as any).minPrice === "number" ? ((p as any).minPrice as number) : null;
-        const maxPrice = typeof (p as any).maxPrice === "number" ? ((p as any).maxPrice as number) : null;
+        const minPrice = typeof p.minPrice === "number" ? p.minPrice : null;
+        const maxPrice = typeof p.maxPrice === "number" ? p.maxPrice : null;
 
-        const firstSeenAt = typeof (p as any).firstSeenAt === "number" ? ((p as any).firstSeenAt as number) : null;
+        const firstSeenAt = typeof p.firstSeenAt === "number" ? p.firstSeenAt : null;
 
         if (minPrevPrice !== null && p.lastPrice <= minPrevPrice - epsilon) {
           newLows.push({
@@ -372,7 +373,7 @@ export const snapshot = queryGeneric({
     }
 
     const outliers: Outlier[] = [];
-    const outlierCanonicalIds = new Set<string>();
+    const outlierCanonicalIds = new Set<Id<"canonicalProducts">>();
     let outlierCount = 0;
 
     for (const bucket of byCanonicalCurrency.values()) {
@@ -394,10 +395,10 @@ export const snapshot = queryGeneric({
       }
     }
 
-    const canonicalNameById = new Map<string, string>();
+    const canonicalNameById = new Map<Id<"canonicalProducts">, string>();
     for (const id of outlierCanonicalIds) {
-      const doc = await ctx.db.get(id as any);
-      if (doc && typeof (doc as any).name === "string") canonicalNameById.set(id, (doc as any).name);
+      const doc = await ctx.db.get(id);
+      if (doc) canonicalNameById.set(id, doc.name);
     }
 
     for (const o of outliers) {
@@ -413,7 +414,7 @@ export const snapshot = queryGeneric({
 
     const canonicals = await ctx.db.query("canonicalProducts").collect();
     const canonicalLinkStats = new Map<
-      string,
+      Id<"canonicalProducts">,
       {
         linkCount: number;
         firstLinkedAt: number;
@@ -421,7 +422,7 @@ export const snapshot = queryGeneric({
       }
     >();
     for (const link of links) {
-      const key = link.canonicalId as unknown as string;
+      const key = link.canonicalId;
       const entry = canonicalLinkStats.get(key);
       if (!entry) {
         canonicalLinkStats.set(key, {

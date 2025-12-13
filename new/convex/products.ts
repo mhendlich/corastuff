@@ -185,8 +185,8 @@ export const ingestRun = mutationGeneric({
         patch.firstSeenAt = existing._creationTime;
       }
       if (nextPrice !== null && existing) {
-        const prevMin = typeof (existing as any).minPrice === "number" ? (existing as any).minPrice : nextPrice;
-        const prevMax = typeof (existing as any).maxPrice === "number" ? (existing as any).maxPrice : nextPrice;
+        const prevMin = typeof existing.minPrice === "number" ? existing.minPrice : nextPrice;
+        const prevMax = typeof existing.maxPrice === "number" ? existing.maxPrice : nextPrice;
         patch.minPrevPrice = prevMin;
         patch.maxPrevPrice = prevMax;
         patch.minPrice = Math.min(prevMin, nextPrice);

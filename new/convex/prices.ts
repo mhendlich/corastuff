@@ -127,7 +127,7 @@ export const overview = queryGeneric({
           priceChange,
           priceChangePct,
           lastSeenAt: p.lastSeenAt,
-          image: (p as any).image ?? null
+          image: p.image ?? null
         });
 
         if (products.length >= limitPerSource) break;
@@ -263,7 +263,7 @@ export const canonicalComparison = queryGeneric({
         url: typeof latest?.url === "string" ? latest.url : null,
         currency,
         currentPrice,
-        image: (latest as any)?.image ?? null,
+        image: latest?.image ?? null,
         history
       });
     }

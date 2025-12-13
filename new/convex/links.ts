@@ -2,6 +2,7 @@ import { mutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
 import { requireSession } from "./authz";
 import Fuse from "fuse.js";
+import type { Doc } from "./_generated/dataModel";
 
 type LinkCounts = {
   sourceSlug: string;
@@ -484,10 +485,10 @@ export const suggestCanonicalsForProduct = queryGeneric({
       .unique();
     if (!product) return [];
 
-    const canonicals = await ctx.db.query("canonicalProducts").order("desc").take(600);
+    const canonicals = (await ctx.db.query("canonicalProducts").order("desc").take(600)) as Doc<"canonicalProducts">[];
     if (canonicals.length === 0) return [];
 
-    const fuse = new Fuse(canonicals, {
+    const fuse = new Fuse<Doc<"canonicalProducts">>(canonicals, {
       includeScore: true,
       shouldSort: true,
       ignoreLocation: true,
@@ -499,17 +500,17 @@ export const suggestCanonicalsForProduct = queryGeneric({
       ]
     });
 
-    const sources = await ctx.db.query("sources").withIndex("by_slug").collect();
-    const sourcesBySlug = new Map<string, any>(sources.map((s: any) => [s.slug, s]));
+    const sources = (await ctx.db.query("sources").withIndex("by_slug").collect()) as Doc<"sources">[];
+    const sourcesBySlug = new Map<string, Doc<"sources">>(sources.map((s) => [s.slug, s]));
     const productHost = extractHost(product.url) ?? hostForSource(sourcesBySlug.get(sourceSlug)) ?? null;
 
     const summaryCache = new Map<string, CanonicalSummary>();
     const productText = `${product.name ?? ""} ${product.itemId ?? ""}`.trim();
     const results = fuse.search(productText, { limit: 36 });
 
-    const scored: Array<{ canonical: any; confidence: number; reason: string }> = [];
+    const scored: Array<{ canonical: Doc<"canonicalProducts">; confidence: number; reason: string }> = [];
     for (const r of results) {
-      const canonical = r.item as any;
+      const canonical = r.item;
       const summary = await getCanonicalSummary(ctx, canonical._id, sourcesBySlug, summaryCache);
       const candidate = scoreCandidate({
         product,
@@ -549,10 +550,10 @@ export const smartSuggestions = queryGeneric({
     if (sourceSlugs.length === 0) return [];
     if (rawSourceSlugs.length > sourceSlugs.length) throw new Error(`Too many sourceSlugs (max ${sourceSlugs.length})`);
 
-    const canonicals = await ctx.db.query("canonicalProducts").order("desc").take(600);
+    const canonicals = (await ctx.db.query("canonicalProducts").order("desc").take(600)) as Doc<"canonicalProducts">[];
     if (canonicals.length === 0) return [];
 
-    const fuse = new Fuse(canonicals, {
+    const fuse = new Fuse<Doc<"canonicalProducts">>(canonicals, {
       includeScore: true,
       shouldSort: true,
       ignoreLocation: true,
@@ -564,14 +565,14 @@ export const smartSuggestions = queryGeneric({
       ]
     });
 
-    const sources = await ctx.db.query("sources").withIndex("by_slug").collect();
-    const sourcesBySlug = new Map<string, any>(sources.map((s: any) => [s.slug, s]));
+    const sources = (await ctx.db.query("sources").withIndex("by_slug").collect()) as Doc<"sources">[];
+    const sourcesBySlug = new Map<string, Doc<"sources">>(sources.map((s) => [s.slug, s]));
     const summaryCache = new Map<string, CanonicalSummary>();
 
     const matchesByCanonicalId = new Map<
       string,
       {
-        canonical: any;
+        canonical: Doc<"canonicalProducts">;
         totalConfidence: number;
         items: Array<{
           product: any;
@@ -611,9 +612,9 @@ export const smartSuggestions = queryGeneric({
         const productHost = extractHost(product.url) ?? hostForSource(sourcesBySlug.get(sourceSlug)) ?? null;
         const results = fuse.search(productText, { limit: 10 });
 
-        let best: { canonical: any; confidence: number; reason: string } | null = null;
+        let best: { canonical: Doc<"canonicalProducts">; confidence: number; reason: string } | null = null;
         for (const r of results) {
-          const canonical = r.item as any;
+          const canonical = r.item;
           const summary = await getCanonicalSummary(ctx, canonical._id, sourcesBySlug, summaryCache);
           const candidate = scoreCandidate({
             product,

@@ -46,8 +46,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
                     </Text>
                   </Group>
                   <Text c="dimmed">
-                    Missing Convex URL. Set <Code>CONVEX_URL</Code> (Docker) or <Code>VITE_CONVEX_URL</Code> (Vite dev)
-                    and restart.
+                    Missing Convex URL. For Docker Compose, set <Code>CONVEX_URL_PUBLIC</Code> (written into{" "}
+                    <Code>/config.js</Code>). For Vite dev, set <Code>VITE_CONVEX_URL</Code>. Then restart.
                   </Text>
                   <Text size="sm" c="dimmed">
                     Tip: open <Anchor href="/config.js">/config.js</Anchor> to verify runtime config.

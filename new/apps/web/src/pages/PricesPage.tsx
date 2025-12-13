@@ -28,6 +28,29 @@ import { fmtAgo, fmtTs } from "../lib/time";
 import text from "../ui/text.module.css";
 import classes from "./PricesPage.module.css";
 
+function parseLocalDate(value: string, defaultTime: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const candidate = trimmed.includes("T") ? trimmed : `${trimmed}T${defaultTime}`;
+  const date = new Date(candidate);
+  if (!Number.isFinite(date.getTime())) return null;
+  return date;
+}
+
+function startOfDayTs(value: string) {
+  const date = parseLocalDate(value, "00:00:00");
+  if (!date) return null;
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function endOfDayTs(value: string) {
+  const date = parseLocalDate(value, "23:59:59.999");
+  if (!date) return null;
+  date.setHours(23, 59, 59, 999);
+  return date.getTime();
+}
+
 function productHref(sourceSlug: string, itemId: string) {
   return `/prices/product/${encodeURIComponent(sourceSlug)}/${encodeURIComponent(itemId)}`;
 }
@@ -93,8 +116,9 @@ export function PricesPage(props: { sessionToken: string }) {
     const [from, to] = seenRange;
     if (!from && !to) return raw;
 
-    const fromTs = from ? new Date(`${from}T00:00:00`).getTime() : null;
-    const toTs = to ? new Date(`${to}T23:59:59.999`).getTime() : null;
+    const fromTs = from ? startOfDayTs(from) : null;
+    const toTs = to ? endOfDayTs(to) : null;
+    if (fromTs === null && toTs === null) return raw;
 
     return raw.map((s) => ({
       ...s,
