@@ -1,0 +1,15 @@
+.row {
+  cursor: pointer;
+}
+
+.nameCell {
+  min-width: 280px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+

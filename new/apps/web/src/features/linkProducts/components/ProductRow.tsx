@@ -5,7 +5,7 @@ import { fmtTs } from "../../../lib/time";
 import type { ProductLatestDoc } from "../../../convexFns";
 import classes from "./ProductRow.module.css";
 
-function money(price: number | undefined, currency: string | null | undefined) {
+function money(price: number | null | undefined, currency: string | null | undefined) {
   if (typeof price !== "number") return "—";
   const c = currency ?? "";
   return `${price} ${c}`.trim();
@@ -55,4 +55,3 @@ export function ProductRow(props: { product: ProductLatestDoc; selected: boolean
     </SelectableRow>
   );
 }
-

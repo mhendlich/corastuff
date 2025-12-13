@@ -69,12 +69,20 @@ export type ProductLatestDoc = {
   itemId: string;
   name: string;
   url?: string | undefined;
-  currency?: string | undefined;
-  lastPrice?: number | undefined;
+  currency?: (string | null) | undefined;
+  lastPrice?: (number | null) | undefined;
   prevPrice?: number | undefined;
   prevPriceAt?: number | undefined;
   priceChange?: number | undefined;
   priceChangePct?: number | undefined;
+  streakKind?: ("drop" | "rise" | null) | undefined;
+  streakTrendPct?: (number | null) | undefined;
+  streakPrices?: (number[] | null) | undefined;
+  firstSeenAt?: number | undefined;
+  minPrice?: number | undefined;
+  maxPrice?: number | undefined;
+  minPrevPrice?: number | undefined;
+  maxPrevPrice?: number | undefined;
   lastSeenAt: number;
   lastSeenRunId?: string | undefined;
   image?: StoredImage | undefined;
@@ -110,6 +118,29 @@ export type CanonicalDoc = {
   createdAt: number;
   updatedAt: number;
 };
+
+export type CanonicalLinkInfo = {
+  canonical: CanonicalDoc;
+  linkCount: number;
+  sourcesPreview: Array<{ sourceSlug: string; displayName: string }>;
+};
+
+export type CanonicalDetail = {
+  canonical: CanonicalDoc;
+  linkCount: number;
+  bestKey: string | null;
+  linkedProducts: Array<{
+    sourceSlug: string;
+    sourceDisplayName: string;
+    itemId: string;
+    name: string | null;
+    price: number | null;
+    currency: string | null;
+    url: string | null;
+    lastSeenAt: number | null;
+    seenInLatestRun: boolean;
+  }>;
+} | null;
 
 export type ProductLinkDoc = {
   _id: string;
@@ -206,6 +237,69 @@ export type InsightsMover = {
   url: string | null;
 };
 
+export type InsightsExtreme = {
+  sourceSlug: string;
+  sourceDisplayName: string;
+  itemId: string;
+  name: string;
+  price: number;
+  currency: string | null;
+  prevExtremePrice: number | null;
+  extremePrice: number | null;
+  changePct: number | null;
+  firstSeenAt: number | null;
+  lastSeenAt: number;
+  url: string | null;
+};
+
+export type InsightsOutlier = {
+  canonicalId: string;
+  canonicalName: string | null;
+  currency: string;
+  medianPrice: number;
+  deviationPct: number;
+  sourceSlug: string;
+  sourceDisplayName: string;
+  itemId: string;
+  name: string;
+  price: number;
+  lastSeenAt: number;
+  url: string | null;
+};
+
+export type InsightsStreakTrend = {
+  sourceSlug: string;
+  sourceDisplayName: string;
+  itemId: string;
+  name: string;
+  price: number;
+  currency: string | null;
+  trendPct: number;
+  prices: number[];
+  lastSeenAt: number;
+  url: string | null;
+};
+
+export type InsightsSourceCoverage = {
+  sourceSlug: string;
+  displayName: string;
+  enabled: boolean;
+  totalProducts: number;
+  unlinkedProducts: number;
+  missingPrices: number;
+  coveragePct: number;
+  lastSeenAt: number | null;
+};
+
+export type InsightsCanonicalCoverageGap = {
+  canonicalId: string;
+  name: string;
+  createdAt: number;
+  linkCount: number;
+  firstLinkedAt: number | null;
+  lastLinkedAt: number | null;
+};
+
 export type InsightsStaleSource = {
   sourceSlug: string;
   displayName: string;
@@ -226,12 +320,31 @@ export type InsightsSnapshot = {
   summary: {
     recentDrops: number;
     recentSpikes: number;
+    newExtremes: number;
+    outliers: number;
     staleSources: number;
     recentFailures: number;
   };
   movers: {
     drops: InsightsMover[];
     spikes: InsightsMover[];
+  };
+  streakTrends: {
+    sustainedDrops: InsightsStreakTrend[];
+    sustainedRises: InsightsStreakTrend[];
+  };
+  extremes: {
+    newLows: InsightsExtreme[];
+    newHighs: InsightsExtreme[];
+  };
+  outliers: InsightsOutlier[];
+  coverage: {
+    sources: InsightsSourceCoverage[];
+    canonicalGaps: InsightsCanonicalCoverageGap[];
+    totals: {
+      unlinkedProducts: number;
+      missingPrices: number;
+    };
   };
   staleSources: InsightsStaleSource[];
   recentFailures: InsightsFailure[];
@@ -318,6 +431,12 @@ export const productsListLatest = makeFunctionReference<
   ProductLatestDoc[]
 >("products:listLatest");
 
+export const productsGetLatestByKey = makeFunctionReference<
+  "query",
+  { sessionToken: string; sourceSlug: string; itemId: string },
+  ProductLatestDoc | null
+>("products:getLatestByKey");
+
 export const schedulesList = makeFunctionReference<"query", { sessionToken: string }, ScheduleDoc[]>("schedules:list");
 
 export const schedulesUpsert = makeFunctionReference<
@@ -337,6 +456,42 @@ export const canonicalsList = makeFunctionReference<
   { sessionToken: string; limit?: number; q?: string },
   CanonicalDoc[]
 >("canonicals:list");
+
+export const canonicalsListWithLinkInfo = makeFunctionReference<
+  "query",
+  { sessionToken: string; limit?: number; q?: string },
+  CanonicalLinkInfo[]
+>("canonicals:listWithLinkInfo");
+
+export const canonicalsGet = makeFunctionReference<
+  "query",
+  { sessionToken: string; canonicalId: string },
+  CanonicalDoc | null
+>("canonicals:get");
+
+export const canonicalsDetail = makeFunctionReference<
+  "query",
+  { sessionToken: string; canonicalId: string },
+  CanonicalDetail
+>("canonicals:detail");
+
+export const canonicalsCreate = makeFunctionReference<
+  "mutation",
+  { sessionToken: string; name: string; description?: string },
+  { id: string }
+>("canonicals:create");
+
+export const canonicalsUpdate = makeFunctionReference<
+  "mutation",
+  { sessionToken: string; canonicalId: string; name: string; description?: string },
+  { ok: boolean }
+>("canonicals:update");
+
+export const canonicalsRemove = makeFunctionReference<
+  "mutation",
+  { sessionToken: string; canonicalId: string },
+  { ok: boolean; deletedLinks: number }
+>("canonicals:remove");
 
 export const adminBackfillProductsLatestLastSeenRunId = makeFunctionReference<
   "action",

@@ -54,6 +54,26 @@ export const listLatest = queryGeneric({
   }
 });
 
+export const getLatestByKey = queryGeneric({
+  args: {
+    sessionToken: v.string(),
+    sourceSlug: v.string(),
+    itemId: v.string()
+  },
+  handler: async (ctx, args) => {
+    await requireSession(ctx, args.sessionToken);
+    const sourceSlug = args.sourceSlug.trim();
+    const itemId = args.itemId.trim();
+    if (!sourceSlug) throw new Error("sourceSlug is required");
+    if (!itemId) throw new Error("itemId is required");
+
+    return await ctx.db
+      .query("productsLatest")
+      .withIndex("by_source_item", (q) => q.eq("sourceSlug", sourceSlug).eq("itemId", itemId))
+      .unique();
+  }
+});
+
 export const ingestRun = mutationGeneric({
   args: {
     sessionToken: v.string(),
@@ -81,17 +101,50 @@ export const ingestRun = mutationGeneric({
 
       let prevPrice: number | null = null;
       let prevPriceAt: number | null = null;
+      let streakKind: "drop" | "rise" | null = null;
+      let streakTrendPct: number | null = null;
+      let streakPrices: number[] | null = null;
+
+      const minStepPct = 1.0;
       if (nextPrice !== null) {
-        const prev = await ctx.db
+        const history = await ctx.db
           .query("pricePoints")
           .withIndex("by_source_item_ts", (q) =>
             q.eq("sourceSlug", args.sourceSlug).eq("itemId", p.itemId).lt("ts", seenAt)
           )
           .order("desc")
-          .take(1);
-        if (prev[0]) {
-          prevPrice = prev[0].price;
-          prevPriceAt = prev[0].ts;
+          .take(3);
+
+        if (history[0]) {
+          prevPrice = history[0].price;
+          prevPriceAt = history[0].ts;
+        }
+
+        if (history.length === 3) {
+          const seriesOldestFirst = [...history].reverse().map((pt) => pt.price).concat([nextPrice]);
+          const oldest = seriesOldestFirst[0]!;
+          if (Number.isFinite(oldest) && oldest > 0) {
+            let monotoneDown = true;
+            let monotoneUp = true;
+            for (let i = 1; i < seriesOldestFirst.length; i += 1) {
+              const prev = seriesOldestFirst[i - 1]!;
+              const cur = seriesOldestFirst[i]!;
+              if (!Number.isFinite(prev) || prev <= 0) {
+                monotoneDown = false;
+                monotoneUp = false;
+                break;
+              }
+              const stepPct = ((cur - prev) / prev) * 100;
+              if (stepPct > -minStepPct) monotoneDown = false;
+              if (stepPct < minStepPct) monotoneUp = false;
+            }
+
+            if (monotoneDown || monotoneUp) {
+              streakKind = monotoneDown ? "drop" : "rise";
+              streakTrendPct = ((nextPrice - oldest) / oldest) * 100;
+              streakPrices = seriesOldestFirst;
+            }
+          }
         }
       }
 
@@ -111,13 +164,34 @@ export const ingestRun = mutationGeneric({
         updatedAt: now
       };
       if (typeof p.url === "string") patch.url = p.url;
-      if (nextCurrency !== null) patch.currency = nextCurrency;
-      if (nextPrice !== null) patch.lastPrice = nextPrice;
+      if (nextPrice !== null) {
+        patch.currency = nextCurrency;
+        patch.lastPrice = nextPrice;
+      } else {
+        patch.currency = nextCurrency;
+        patch.lastPrice = null;
+      }
       if (prevPrice !== null) patch.prevPrice = prevPrice;
       if (prevPriceAt !== null) patch.prevPriceAt = prevPriceAt;
       if (priceChange !== null) patch.priceChange = priceChange;
       if (priceChangePct !== null) patch.priceChangePct = priceChangePct;
+      if (nextPrice !== null) {
+        patch.streakKind = streakKind;
+        patch.streakTrendPct = streakTrendPct;
+        patch.streakPrices = streakPrices;
+      }
       if (p.image) patch.image = p.image;
+      if (existing && typeof existing.firstSeenAt !== "number") {
+        patch.firstSeenAt = existing._creationTime;
+      }
+      if (nextPrice !== null && existing) {
+        const prevMin = typeof (existing as any).minPrice === "number" ? (existing as any).minPrice : nextPrice;
+        const prevMax = typeof (existing as any).maxPrice === "number" ? (existing as any).maxPrice : nextPrice;
+        patch.minPrevPrice = prevMin;
+        patch.maxPrevPrice = prevMax;
+        patch.minPrice = Math.min(prevMin, nextPrice);
+        patch.maxPrice = Math.max(prevMax, nextPrice);
+      }
 
       if (existing) {
         await ctx.db.patch(existing._id, patch);
@@ -129,16 +203,28 @@ export const ingestRun = mutationGeneric({
           name: p.name,
           lastSeenAt: seenAt,
           lastSeenRunId: args.runId,
+          firstSeenAt: seenAt,
           updatedAt: now
         };
         if (typeof p.url === "string") record.url = p.url;
-        if (nextCurrency !== null) record.currency = nextCurrency;
-        if (nextPrice !== null) record.lastPrice = nextPrice;
+        record.currency = nextCurrency;
+        record.lastPrice = nextPrice;
         if (prevPrice !== null) record.prevPrice = prevPrice;
         if (prevPriceAt !== null) record.prevPriceAt = prevPriceAt;
         if (priceChange !== null) record.priceChange = priceChange;
         if (priceChangePct !== null) record.priceChangePct = priceChangePct;
+        if (nextPrice !== null) {
+          record.streakKind = streakKind;
+          record.streakTrendPct = streakTrendPct;
+          record.streakPrices = streakPrices;
+        }
         if (p.image) record.image = p.image;
+        if (nextPrice !== null) {
+          record.minPrice = nextPrice;
+          record.maxPrice = nextPrice;
+          record.minPrevPrice = nextPrice;
+          record.maxPrevPrice = nextPrice;
+        }
         await ctx.db.insert("productsLatest", record);
         inserted += 1;
       }

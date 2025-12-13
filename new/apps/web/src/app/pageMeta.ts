@@ -2,7 +2,7 @@ export function pageMeta(pathname: string): { title: string; subtitle: string } 
   if (pathname === "/") return { title: "Dashboard", subtitle: "Overview of sources and runs." };
   if (pathname.startsWith("/insights"))
     return { title: "Insights", subtitle: "Signals that surface price swings and scrape health." };
-  if (pathname.startsWith("/products")) return { title: "Products", subtitle: "Coming soon." };
+  if (pathname.startsWith("/products")) return { title: "Products", subtitle: "Manage canonicals and links." };
   if (pathname.startsWith("/link")) return { title: "Link Products", subtitle: "Multi-source linking workbench." };
   if (pathname.startsWith("/prices")) return { title: "Prices", subtitle: "Coming soon." };
   if (pathname.startsWith("/amazon-pricing")) return { title: "Amazon Pricing", subtitle: "Coming soon." };

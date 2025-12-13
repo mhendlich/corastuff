@@ -42,34 +42,39 @@ Old reference: `src/webapp/templates/dashboard.html`, `src/webapp/templates/part
 
 Old reference: `src/webapp/templates/insights.html`, `src/db.py:get_insights_snapshot`.
 
-- [ ] Port “Insights” computation into Convex (or a worker-produced snapshot):
+- [x] Port “Insights” computation into Convex (or a worker-produced snapshot):
   - [x] Persist per-product previous price + delta fields during ingest (supports movers + prices landing).
   - [x] Summary tiles: recent drops, recent spikes, stale sources, recent failures.
-  - [ ] Summary tiles: new extremes, outliers.
+  - [x] Summary tiles: new extremes, outliers.
   - [x] “Last-run movers” sections (drops/spikes) (deep links TBD until `/prices/*` exists).
-  - [ ] New lows / new highs lists.
-  - [ ] “Streak trends” (sustained drops/rises).
-  - [ ] Cross-source outliers vs canonical median (requires canonical link graph + latest prices).
-  - [ ] Coverage snapshots: source coverage + canonical coverage gaps (old: `get_source_coverage_snapshot`, `get_canonical_coverage_gaps`).
+  - [x] New lows / new highs lists.
+  - [x] “Streak trends” (sustained drops/rises).
+  - [x] Cross-source outliers vs canonical median (requires canonical link graph + latest prices).
+  - [x] Coverage snapshots: source coverage + canonical coverage gaps (old: `get_source_coverage_snapshot`, `get_canonical_coverage_gaps`).
   - [x] Scrape health signals: stale sources (by last scrape time) + recent failures window.
 - [ ] Build the Insights UI with the same information architecture and drilldowns as old.
   - [x] Add the `/insights` route + nav + MVP page (tiles + movers + scrape health).
-  - [ ] Add remaining sections + drilldowns (extremes, outliers, streak trends, coverage).
+  - [x] Add extremes + outliers sections (new lows/highs + outliers list).
+  - [x] Add streak trends + coverage sections.
+  - [ ] Add drilldowns for streak/coverage items.
+    - [x] Canonical coverage gaps link to canonical detail (`/products/:canonicalId`).
+    - [x] Deep-link movers/extremes/streaks/outliers + source unlinked counts into `/link`.
+    - [ ] Price-history drilldowns (blocked on `/prices/*` parity).
 
 ## 3) Canonical Products parity (`/products/*`)
 
 Old reference: `src/webapp/templates/products/*`, routes in `src/webapp/routes.py`, DB ops in `src/db.py` (canonical CRUD + links).
 
-- [ ] Canonical products list page
-  - [ ] Search (name + description).
-  - [ ] Link-count badge + linked-source chips preview.
-  - [ ] “New Product” CTA.
-- [ ] Canonical create/edit form (name + optional description).
-- [ ] Canonical detail page
-  - [ ] Table of linked source products with: source, name, price, currency, item id, outbound URL.
-  - [ ] Highlight best price among linked sources.
-  - [ ] Unlink action per row with redirect back to canonical detail.
-- [ ] Canonical delete flow with confirmation (deletes links too).
+- [x] Canonical products list page
+  - [x] Search (name + description).
+  - [x] Link-count badge + linked-source chips preview.
+  - [x] “New Product” CTA.
+- [x] Canonical create/edit form (name + optional description).
+- [x] Canonical detail page
+  - [x] Table of linked source products with: source, name, price, currency, item id, outbound URL.
+  - [x] Highlight best price among linked sources.
+  - [x] Unlink action per row with redirect back to canonical detail.
+- [x] Canonical delete flow with confirmation (deletes links too).
 
 ## 4) Link Products workbench parity (`/link`)
 

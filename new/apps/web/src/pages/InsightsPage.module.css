@@ -8,3 +8,11 @@
   max-height: 5.8em;
   overflow: hidden;
 }
+
+.coverageLink {
+  text-decoration: none;
+}
+
+.coverageLink:hover {
+  text-decoration: underline;
+}

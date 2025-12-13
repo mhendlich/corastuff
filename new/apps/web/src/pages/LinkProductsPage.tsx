@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "convex/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Badge,
   Button,
@@ -32,6 +33,7 @@ import {
   linksListUnlinked,
   linksUnlink,
   pricesListForProduct,
+  productsGetLatestByKey,
   productsListLatest,
   sourcesList,
   type CanonicalDoc,
@@ -39,7 +41,7 @@ import {
   type PricePointDoc
 } from "../convexFns";
 
-function money(price: number | undefined, currency: string | null | undefined) {
+function money(price: number | null | undefined, currency: string | null | undefined) {
   if (typeof price !== "number") return "—";
   const c = currency ?? "";
   return `${price} ${c}`.trim();
@@ -48,14 +50,36 @@ function money(price: number | undefined, currency: string | null | undefined) {
 export function LinkProductsPage(props: { sessionToken: string }) {
   const { sessionToken } = props;
 
+  const [searchParams] = useSearchParams();
+  const deepLinkSourceSlug = (searchParams.get("sourceSlug") ?? "").trim() || null;
+  const deepLinkItemId = (searchParams.get("itemId") ?? "").trim() || null;
+  const deepLinkTabParam = (searchParams.get("tab") ?? "").trim() || null;
+
+  const deepLinkApplied = useRef({ source: false, tab: false, product: false });
+
   const sources = useQuery(sourcesList, { sessionToken }) ?? [];
 
   const [productSourceSlug, setProductSourceSlug] = useState<string | null>(null);
   useEffect(() => {
-    if (!productSourceSlug && sources.length > 0) setProductSourceSlug(sources[0]!.slug);
-  }, [productSourceSlug, sources]);
+    if (sources.length === 0) return;
+    if (deepLinkApplied.current.source) return;
+    deepLinkApplied.current.source = true;
+
+    if (deepLinkSourceSlug && sources.some((s) => s.slug === deepLinkSourceSlug)) {
+      setProductSourceSlug(deepLinkSourceSlug);
+      return;
+    }
+    if (!productSourceSlug) setProductSourceSlug(sources[0]!.slug);
+  }, [productSourceSlug, sources, deepLinkSourceSlug]);
 
   const skip = "skip" as const;
+
+  const [tab, setTab] = useState<"unlinked" | "latest">("unlinked");
+  useEffect(() => {
+    if (deepLinkApplied.current.tab) return;
+    deepLinkApplied.current.tab = true;
+    if (deepLinkTabParam === "latest" || deepLinkTabParam === "unlinked") setTab(deepLinkTabParam);
+  }, [deepLinkTabParam]);
 
   const linkCounts =
     useQuery(
@@ -85,15 +109,34 @@ export function LinkProductsPage(props: { sessionToken: string }) {
         : skip
     ) ?? [];
 
+  const deepLinkedProduct =
+    useQuery(
+      productsGetLatestByKey,
+      deepLinkSourceSlug && deepLinkItemId
+        ? { sessionToken, sourceSlug: deepLinkSourceSlug, itemId: deepLinkItemId }
+        : skip
+    ) ?? null;
+
   const productByKey = useMemo(() => {
     const map = new Map<string, (typeof products)[number]>();
     for (const p of products) map.set(`${p.sourceSlug}:${p.itemId}`, p);
     for (const p of unlinked) map.set(`${p.sourceSlug}:${p.itemId}`, p);
+    if (deepLinkedProduct) map.set(`${deepLinkedProduct.sourceSlug}:${deepLinkedProduct.itemId}`, deepLinkedProduct);
     return map;
-  }, [products, unlinked]);
+  }, [products, unlinked, deepLinkedProduct]);
 
   const [selectedProductKey, setSelectedProductKey] = useState<{ sourceSlug: string; itemId: string } | null>(null);
   useEffect(() => {
+    if (!deepLinkApplied.current.product && deepLinkSourceSlug && deepLinkItemId) {
+      const key = `${deepLinkSourceSlug}:${deepLinkItemId}`;
+      const p = productByKey.get(key);
+      if (p) {
+        deepLinkApplied.current.product = true;
+        setSelectedProductKey({ sourceSlug: deepLinkSourceSlug, itemId: deepLinkItemId });
+        return;
+      }
+    }
+
     const current =
       selectedProductKey && productByKey.get(`${selectedProductKey.sourceSlug}:${selectedProductKey.itemId}`);
     if (current) return;
@@ -101,7 +144,7 @@ export function LinkProductsPage(props: { sessionToken: string }) {
     const first = unlinked[0] ?? products[0];
     if (first) setSelectedProductKey({ sourceSlug: first.sourceSlug, itemId: first.itemId });
     else setSelectedProductKey(null);
-  }, [selectedProductKey, productByKey, products, unlinked]);
+  }, [selectedProductKey, productByKey, products, unlinked, deepLinkSourceSlug, deepLinkItemId]);
 
   const selectedProduct = selectedProductKey
     ? productByKey.get(`${selectedProductKey.sourceSlug}:${selectedProductKey.itemId}`) ?? null
@@ -197,7 +240,12 @@ export function LinkProductsPage(props: { sessionToken: string }) {
 
         <SimpleGrid cols={{ base: 1, lg: 3 }} spacing="md">
           <Panel>
-            <Tabs defaultValue="unlinked" variant="pills" radius="xl">
+            <Tabs
+              value={tab}
+              onChange={(v) => setTab(v === "latest" ? "latest" : "unlinked")}
+              variant="pills"
+              radius="xl"
+            >
               <Tabs.List grow>
                 <Tabs.Tab value="unlinked">Unlinked</Tabs.Tab>
                 <Tabs.Tab value="latest">Latest</Tabs.Tab>

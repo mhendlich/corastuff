@@ -1,18 +1,16 @@
-import { Badge, Group, Stack, Text } from "@mantine/core";
+import { Anchor, Badge, Group, Stack, Text } from "@mantine/core";
+import { Link } from "react-router-dom";
 import { Panel } from "../../../components/Panel";
 import text from "../../../ui/text.module.css";
 import { fmtAgo } from "../../../lib/time";
 import type { InsightsMover } from "../../../convexFns";
-
-function fmtMoney(price: number, currency: string | null) {
-  const p = Number.isFinite(price) ? price.toFixed(2) : "—";
-  return currency ? `${p} ${currency}` : p;
-}
+import { fmtMoney, fmtSignedNumber, fmtSignedPct } from "../lib/format";
+import { linkWorkbenchHref } from "../../../lib/routes";
 
 function fmtDelta(m: InsightsMover) {
   if (typeof m.changeAbs !== "number" && typeof m.changePct !== "number") return "—";
-  const abs = typeof m.changeAbs === "number" ? `${m.changeAbs >= 0 ? "+" : ""}${m.changeAbs.toFixed(2)}` : null;
-  const pct = typeof m.changePct === "number" ? `${m.changePct >= 0 ? "+" : ""}${m.changePct.toFixed(1)}%` : null;
+  const abs = fmtSignedNumber(typeof m.changeAbs === "number" ? m.changeAbs : null, 2);
+  const pct = fmtSignedPct(typeof m.changePct === "number" ? m.changePct : null, 1);
   if (abs && pct) return `${abs} (${pct})`;
   return abs ?? pct ?? "—";
 }
@@ -25,9 +23,16 @@ export function MoverRow(props: { kind: "drop" | "spike"; mover: InsightsMover }
     <Panel variant="subtle" p="md">
       <Group justify="space-between" align="flex-start" wrap="nowrap" gap="md">
         <Stack gap={6} style={{ minWidth: 0 }}>
-          <Text fw={600} size="sm" lineClamp={1} title={m.name}>
+          <Anchor
+            component={Link}
+            to={linkWorkbenchHref({ sourceSlug: m.sourceSlug, itemId: m.itemId })}
+            fw={600}
+            size="sm"
+            lineClamp={1}
+            title="Open in Link Products"
+          >
             {m.name}
-          </Text>
+          </Anchor>
           <Group gap={8} wrap="wrap">
             <Badge variant="light" color={color} radius="xl">
               {m.sourceDisplayName}
@@ -55,4 +60,3 @@ export function MoverRow(props: { kind: "drop" | "spike"; mover: InsightsMover }
     </Panel>
   );
 }
-

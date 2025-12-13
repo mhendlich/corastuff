@@ -1,10 +1,16 @@
 import { useQuery } from "convex/react";
-import { Badge, Card, Container, Group, SimpleGrid, Stack, Text, Title } from "@mantine/core";
+import { Anchor, Badge, Card, Container, Group, SimpleGrid, Stack, Table, Text, Title } from "@mantine/core";
+import { Link } from "react-router-dom";
 import { MetricTile } from "../components/MetricTile";
 import { Panel } from "../components/Panel";
 import { MoverRow } from "../features/insights/components/MoverRow";
+import { ExtremeRow } from "../features/insights/components/ExtremeRow";
+import { OutlierRow } from "../features/insights/components/OutlierRow";
+import { StreakRow } from "../features/insights/components/StreakRow";
+import { CanonicalGapRow } from "../features/insights/components/CanonicalGapRow";
 import { insightsSnapshot, type InsightsSnapshot } from "../convexFns";
 import { fmtAgo, fmtTs } from "../lib/time";
+import { linkWorkbenchHref } from "../lib/routes";
 import text from "../ui/text.module.css";
 import classes from "./InsightsPage.module.css";
 
@@ -41,8 +47,16 @@ export function InsightsPage(props: { sessionToken: string }) {
             hint="Large upticks needing validation."
             tone="warn"
           />
-          <MetricTile label="New Extremes" value="—" hint="Coming soon." />
-          <MetricTile label="Outliers" value="—" hint="Coming soon." />
+          <MetricTile
+            label="New Extremes"
+            value={String(snapshot.summary.newExtremes)}
+            hint="Items hitting historic bounds."
+          />
+          <MetricTile
+            label="Outliers"
+            value={String(snapshot.summary.outliers)}
+            hint="Prices far from canonical median."
+          />
           <MetricTile
             label="Stale Sources"
             value={String(snapshot.summary.staleSources)}
@@ -184,8 +198,274 @@ export function InsightsPage(props: { sessionToken: string }) {
             </Panel>
           </Stack>
         </SimpleGrid>
+
+        <Panel>
+          <Group justify="space-between" align="flex-end">
+            <div>
+              <Title order={4}>Streak trends</Title>
+              <Text size="sm" c="dimmed">
+                Sustained moves across the last 4 price points
+              </Text>
+            </div>
+            <Badge variant="light" color="gray">
+              {snapshot.streakTrends.sustainedDrops.length + snapshot.streakTrends.sustainedRises.length}
+            </Badge>
+          </Group>
+
+          <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" mt="lg">
+            <Stack gap="sm">
+              <Group justify="space-between">
+                <Text size="xs" tt="uppercase" fw={700} c="teal.2" className={text.tracking}>
+                  Drops
+                </Text>
+                <Badge variant="light" color="gray">
+                  {snapshot.streakTrends.sustainedDrops.length}
+                </Badge>
+              </Group>
+              {snapshot.streakTrends.sustainedDrops.length > 0 ? (
+                <Stack gap="sm">
+                  {snapshot.streakTrends.sustainedDrops.map((t) => (
+                    <StreakRow key={`${t.sourceSlug}:${t.itemId}:drop`} kind="drop" item={t} />
+                  ))}
+                </Stack>
+              ) : (
+                <Text c="dimmed" size="sm">
+                  No sustained drops detected.
+                </Text>
+              )}
+            </Stack>
+
+            <Stack gap="sm">
+              <Group justify="space-between">
+                <Text size="xs" tt="uppercase" fw={700} c="yellow.2" className={text.tracking}>
+                  Spikes
+                </Text>
+                <Badge variant="light" color="gray">
+                  {snapshot.streakTrends.sustainedRises.length}
+                </Badge>
+              </Group>
+              {snapshot.streakTrends.sustainedRises.length > 0 ? (
+                <Stack gap="sm">
+                  {snapshot.streakTrends.sustainedRises.map((t) => (
+                    <StreakRow key={`${t.sourceSlug}:${t.itemId}:rise`} kind="rise" item={t} />
+                  ))}
+                </Stack>
+              ) : (
+                <Text c="dimmed" size="sm">
+                  No sustained spikes detected.
+                </Text>
+              )}
+            </Stack>
+          </SimpleGrid>
+        </Panel>
+
+        <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md">
+          <Panel>
+            <Group justify="space-between" align="flex-end">
+              <div>
+                <Title order={4}>New extremes</Title>
+                <Text size="sm" c="dimmed">
+                  Items hitting new lows/highs (per source)
+                </Text>
+              </div>
+              <Badge variant="light" color="gray">
+                {snapshot.summary.newExtremes}
+              </Badge>
+            </Group>
+
+            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" mt="lg">
+              <Stack gap="sm">
+                <Group justify="space-between">
+                  <Text size="xs" tt="uppercase" fw={700} c="teal.2" className={text.tracking}>
+                    New lows
+                  </Text>
+                  <Badge variant="light" color="gray">
+                    {snapshot.extremes.newLows.length}
+                  </Badge>
+                </Group>
+                {snapshot.extremes.newLows.length > 0 ? (
+                  <Stack gap="sm">
+                    {snapshot.extremes.newLows.map((e) => (
+                      <ExtremeRow key={`${e.sourceSlug}:${e.itemId}:low`} kind="low" item={e} />
+                    ))}
+                  </Stack>
+                ) : (
+                  <Text c="dimmed" size="sm">
+                    No new lows detected yet.
+                  </Text>
+                )}
+              </Stack>
+
+              <Stack gap="sm">
+                <Group justify="space-between">
+                  <Text size="xs" tt="uppercase" fw={700} c="yellow.2" className={text.tracking}>
+                    New highs
+                  </Text>
+                  <Badge variant="light" color="gray">
+                    {snapshot.extremes.newHighs.length}
+                  </Badge>
+                </Group>
+                {snapshot.extremes.newHighs.length > 0 ? (
+                  <Stack gap="sm">
+                    {snapshot.extremes.newHighs.map((e) => (
+                      <ExtremeRow key={`${e.sourceSlug}:${e.itemId}:high`} kind="high" item={e} />
+                    ))}
+                  </Stack>
+                ) : (
+                  <Text c="dimmed" size="sm">
+                    No new highs detected yet.
+                  </Text>
+                )}
+              </Stack>
+            </SimpleGrid>
+          </Panel>
+
+          <Panel>
+            <Group justify="space-between" align="flex-end">
+              <div>
+                <Title order={4}>Outliers</Title>
+                <Text size="sm" c="dimmed">
+                  Linked products deviating from canonical median (needs 3+ sources)
+                </Text>
+              </div>
+              <Badge variant="light" color="gray">
+                {snapshot.summary.outliers}
+              </Badge>
+            </Group>
+
+            <Stack gap="sm" mt="lg">
+              {snapshot.outliers.length > 0 ? (
+                snapshot.outliers.map((o) => (
+                  <OutlierRow key={`${o.canonicalId}:${o.sourceSlug}:${o.itemId}`} outlier={o} />
+                ))
+              ) : (
+                <Text c="dimmed" size="sm">
+                  No outliers detected yet.
+                </Text>
+              )}
+            </Stack>
+          </Panel>
+        </SimpleGrid>
+
+        <Panel>
+          <Group justify="space-between" align="flex-end">
+            <div>
+              <Title order={4}>Coverage & data quality</Title>
+              <Text size="sm" c="dimmed">
+                Where to focus linking and enrichment
+              </Text>
+            </div>
+            <Group gap={8}>
+              <Badge variant="light" color="gray">
+                Unlinked {snapshot.coverage.totals.unlinkedProducts}
+              </Badge>
+              <Badge variant="light" color="gray">
+                Missing price {snapshot.coverage.totals.missingPrices}
+              </Badge>
+            </Group>
+          </Group>
+
+          <SimpleGrid cols={{ base: 1, lg: 3 }} spacing="md" mt="lg">
+            <div style={{ gridColumn: "span 2" }}>
+              <div style={{ overflowX: "auto" }}>
+                <Table withTableBorder withColumnBorders={false} highlightOnHover>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Source</Table.Th>
+                      <Table.Th ta="right">Coverage</Table.Th>
+                      <Table.Th ta="right">Unlinked</Table.Th>
+                      <Table.Th ta="right">Missing price</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {snapshot.coverage.sources.length > 0 ? (
+                      snapshot.coverage.sources.map((row) => (
+                        <Table.Tr key={row.sourceSlug}>
+                          <Table.Td>
+                            <Stack gap={2}>
+                              <Group gap={8}>
+                                <Text size="sm" fw={600}>
+                                  {row.displayName}
+                                </Text>
+                                {row.enabled ? (
+                                  <Badge variant="light" color="gray">
+                                    enabled
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="light" color="dark">
+                                    disabled
+                                  </Badge>
+                                )}
+                              </Group>
+                              <Text size="xs" c="dimmed">
+                                Latest: {row.lastSeenAt ? fmtTs(row.lastSeenAt) : "—"}
+                              </Text>
+                            </Stack>
+                          </Table.Td>
+                          <Table.Td ta="right">
+                            <Stack gap={2} align="flex-end">
+                              <Text fw={700} className={text.mono} c="teal.2">
+                                {row.coveragePct.toFixed(1)}%
+                              </Text>
+                              <Text size="xs" c="dimmed" className={text.mono}>
+                                {row.totalProducts} items
+                              </Text>
+                            </Stack>
+                          </Table.Td>
+                          <Table.Td ta="right">
+                            <Anchor
+                              component={Link}
+                              to={linkWorkbenchHref({ sourceSlug: row.sourceSlug, tab: "unlinked" })}
+                              className={classes.coverageLink}
+                            >
+                              <Text fw={700} className={text.mono} c="yellow.2">
+                                {row.unlinkedProducts}
+                              </Text>
+                            </Anchor>
+                          </Table.Td>
+                          <Table.Td ta="right">
+                            <Text fw={700} className={text.mono} c="red.2">
+                              {row.missingPrices}
+                            </Text>
+                          </Table.Td>
+                        </Table.Tr>
+                      ))
+                    ) : (
+                      <Table.Tr>
+                        <Table.Td colSpan={4}>
+                          <Text c="dimmed" size="sm">
+                            No coverage metrics yet.
+                          </Text>
+                        </Table.Td>
+                      </Table.Tr>
+                    )}
+                  </Table.Tbody>
+                </Table>
+              </div>
+            </div>
+
+            <Stack gap="sm">
+              <Group justify="space-between">
+                <Title order={5}>Thin canonical coverage</Title>
+                <Badge variant="light" color="gray">
+                  {snapshot.coverage.canonicalGaps.length}
+                </Badge>
+              </Group>
+              {snapshot.coverage.canonicalGaps.length > 0 ? (
+                <Stack gap="sm">
+                  {snapshot.coverage.canonicalGaps.map((gap) => (
+                    <CanonicalGapRow key={gap.canonicalId} gap={gap} />
+                  ))}
+                </Stack>
+              ) : (
+                <Text c="dimmed" size="sm">
+                  All canonicals have 2+ links.
+                </Text>
+              )}
+            </Stack>
+          </SimpleGrid>
+        </Panel>
       </Stack>
     </Container>
   );
 }
-

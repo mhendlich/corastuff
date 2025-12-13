@@ -15,7 +15,7 @@ import {
 export const NAV_ITEMS: Array<{ to: string; label: string; icon: TablerIcon; disabled?: boolean }> = [
   { to: "/", label: "Dashboard", icon: IconChartHistogram },
   { to: "/insights", label: "Insights", icon: IconSparkles },
-  { to: "/products", label: "Products", icon: IconDatabase, disabled: true },
+  { to: "/products", label: "Products", icon: IconDatabase },
   { to: "/link", label: "Link Products", icon: IconLink },
   { to: "/prices", label: "Prices", icon: IconTimelineEvent, disabled: true },
   { to: "/amazon-pricing", label: "Amazon Pricing", icon: IconRoute, disabled: true },

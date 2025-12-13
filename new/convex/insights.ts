@@ -16,6 +16,77 @@ type Mover = {
   url: string | null;
 };
 
+type Extreme = {
+  sourceSlug: string;
+  sourceDisplayName: string;
+  itemId: string;
+  name: string;
+  price: number;
+  currency: string | null;
+  prevExtremePrice: number | null;
+  extremePrice: number | null;
+  changePct: number | null;
+  firstSeenAt: number | null;
+  lastSeenAt: number;
+  url: string | null;
+};
+
+type Outlier = {
+  canonicalId: string;
+  canonicalName: string | null;
+  currency: string;
+  medianPrice: number;
+  deviationPct: number;
+  sourceSlug: string;
+  sourceDisplayName: string;
+  itemId: string;
+  name: string;
+  price: number;
+  lastSeenAt: number;
+  url: string | null;
+};
+
+type StreakTrend = {
+  sourceSlug: string;
+  sourceDisplayName: string;
+  itemId: string;
+  name: string;
+  price: number;
+  currency: string | null;
+  trendPct: number;
+  prices: number[];
+  lastSeenAt: number;
+  url: string | null;
+};
+
+type SourceCoverage = {
+  sourceSlug: string;
+  displayName: string;
+  enabled: boolean;
+  totalProducts: number;
+  unlinkedProducts: number;
+  missingPrices: number;
+  coveragePct: number;
+  lastSeenAt: number | null;
+};
+
+type CanonicalCoverageGap = {
+  canonicalId: string;
+  name: string;
+  createdAt: number;
+  linkCount: number;
+  firstLinkedAt: number | null;
+  lastLinkedAt: number | null;
+};
+
+function median(values: number[]) {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) return (sorted[mid - 1]! + sorted[mid]!) / 2;
+  return sorted[mid]!;
+}
+
 export const snapshot = queryGeneric({
   args: { sessionToken: v.string() },
   handler: async (ctx, args) => {
@@ -26,6 +97,8 @@ export const snapshot = queryGeneric({
     const failureCutoffMs = 36 * 60 * 60 * 1000;
 
     const sources = await ctx.db.query("sources").collect();
+    const links = await ctx.db.query("productLinks").collect();
+    const linkedPairs = new Set<string>(links.map((l) => `${l.sourceSlug}:${l.itemId}`));
 
     const staleSources = sources
       .filter((s) => typeof s.lastSuccessfulAt !== "number" || s.lastSuccessfulAt < now - staleCutoffMs)
@@ -62,10 +135,37 @@ export const snapshot = queryGeneric({
     let dropCount = 0;
     let spikeCount = 0;
 
+    const newLows: Extreme[] = [];
+    const newHighs: Extreme[] = [];
+    let newExtremesCount = 0;
+
+    const sustainedDrops: StreakTrend[] = [];
+    const sustainedRises: StreakTrend[] = [];
+
+    const coverageBySource: SourceCoverage[] = [];
+    let totalUnlinked = 0;
+    let totalMissingPrices = 0;
+
     const dropThresholdPct = -8;
     const spikeThresholdPct = 12;
     const dropThresholdAbs = -5;
     const spikeThresholdAbs = 8;
+    const outlierThresholdPct = 18;
+    const epsilon = 0.01;
+
+    const latestBySourceItem = new Map<
+      string,
+      {
+        sourceSlug: string;
+        sourceDisplayName: string;
+        itemId: string;
+        name: string;
+        price: number;
+        currency: string;
+        lastSeenAt: number;
+        url: string | null;
+      }
+    >();
 
     for (const s of sources) {
       const latestRunId = s.lastSuccessfulRunId;
@@ -78,7 +178,17 @@ export const snapshot = queryGeneric({
         )
         .collect();
 
+      let sourceTotal = 0;
+      let sourceUnlinked = 0;
+      let sourceMissingPrice = 0;
+      let sourceLastSeenAt: number | null = null;
+
       for (const p of products) {
+        sourceTotal += 1;
+        if (!linkedPairs.has(`${s.slug}:${p.itemId}`)) sourceUnlinked += 1;
+        if (typeof p.lastPrice !== "number") sourceMissingPrice += 1;
+        if (typeof p.lastSeenAt === "number") sourceLastSeenAt = Math.max(sourceLastSeenAt ?? 0, p.lastSeenAt);
+
         if (typeof p.lastPrice !== "number") continue;
 
         const prevPrice = typeof p.prevPrice === "number" ? p.prevPrice : null;
@@ -91,6 +201,91 @@ export const snapshot = queryGeneric({
               ? (changeAbs / prevPrice) * 100
               : null;
 
+        const currency = typeof p.currency === "string" ? p.currency : null;
+        const url = typeof p.url === "string" ? p.url : null;
+
+        if (currency !== null) {
+          latestBySourceItem.set(`${s.slug}:${p.itemId}`, {
+            sourceSlug: s.slug,
+            sourceDisplayName: s.displayName,
+            itemId: p.itemId,
+            name: p.name,
+            price: p.lastPrice,
+            currency,
+            lastSeenAt: p.lastSeenAt,
+            url
+          });
+        }
+
+        const streakKind = (p as any).streakKind as "drop" | "rise" | null | undefined;
+        const streakTrendPct = (p as any).streakTrendPct as number | null | undefined;
+        const streakPrices = (p as any).streakPrices as number[] | null | undefined;
+        if (
+          (streakKind === "drop" || streakKind === "rise") &&
+          typeof streakTrendPct === "number" &&
+          Array.isArray(streakPrices) &&
+          streakPrices.length >= 4
+        ) {
+          const trend: StreakTrend = {
+            sourceSlug: s.slug,
+            sourceDisplayName: s.displayName,
+            itemId: p.itemId,
+            name: p.name,
+            price: p.lastPrice,
+            currency,
+            trendPct: streakTrendPct,
+            prices: streakPrices,
+            lastSeenAt: p.lastSeenAt,
+            url
+          };
+          if (streakKind === "drop") sustainedDrops.push(trend);
+          else sustainedRises.push(trend);
+        }
+
+        const minPrevPrice = typeof (p as any).minPrevPrice === "number" ? ((p as any).minPrevPrice as number) : null;
+        const maxPrevPrice = typeof (p as any).maxPrevPrice === "number" ? ((p as any).maxPrevPrice as number) : null;
+
+        const minPrice = typeof (p as any).minPrice === "number" ? ((p as any).minPrice as number) : null;
+        const maxPrice = typeof (p as any).maxPrice === "number" ? ((p as any).maxPrice as number) : null;
+
+        const firstSeenAt = typeof (p as any).firstSeenAt === "number" ? ((p as any).firstSeenAt as number) : null;
+
+        if (minPrevPrice !== null && p.lastPrice <= minPrevPrice - epsilon) {
+          newLows.push({
+            sourceSlug: s.slug,
+            sourceDisplayName: s.displayName,
+            itemId: p.itemId,
+            name: p.name,
+            price: p.lastPrice,
+            currency,
+            prevExtremePrice: minPrevPrice,
+            extremePrice: minPrice,
+            changePct,
+            firstSeenAt,
+            lastSeenAt: p.lastSeenAt,
+            url
+          });
+          newExtremesCount += 1;
+        }
+
+        if (maxPrevPrice !== null && p.lastPrice >= maxPrevPrice + epsilon) {
+          newHighs.push({
+            sourceSlug: s.slug,
+            sourceDisplayName: s.displayName,
+            itemId: p.itemId,
+            name: p.name,
+            price: p.lastPrice,
+            currency,
+            prevExtremePrice: maxPrevPrice,
+            extremePrice: maxPrice,
+            changePct,
+            firstSeenAt,
+            lastSeenAt: p.lastSeenAt,
+            url
+          });
+          newExtremesCount += 1;
+        }
+
         if (changeAbs === null && changePct === null) continue;
 
         const isDrop =
@@ -101,9 +296,6 @@ export const snapshot = queryGeneric({
           (typeof changeAbs === "number" && changeAbs >= spikeThresholdAbs);
 
         if (!isDrop && !isSpike) continue;
-
-        const currency = typeof p.currency === "string" ? p.currency : null;
-        const url = typeof p.url === "string" ? p.url : null;
 
         const mover: Mover = {
           sourceSlug: s.slug,
@@ -127,16 +319,148 @@ export const snapshot = queryGeneric({
           spikeCount += 1;
         }
       }
+
+      if (sourceTotal > 0) {
+        totalUnlinked += sourceUnlinked;
+        totalMissingPrices += sourceMissingPrice;
+        coverageBySource.push({
+          sourceSlug: s.slug,
+          displayName: s.displayName,
+          enabled: s.enabled,
+          totalProducts: sourceTotal,
+          unlinkedProducts: sourceUnlinked,
+          missingPrices: sourceMissingPrice,
+          coveragePct: sourceTotal > 0 ? Math.round((1 - sourceUnlinked / sourceTotal) * 1000) / 10 : 0,
+          lastSeenAt: sourceLastSeenAt
+        });
+      }
     }
 
     drops.sort((a, b) => (a.changePct ?? 0) - (b.changePct ?? 0));
     spikes.sort((a, b) => (b.changePct ?? 0) - (a.changePct ?? 0));
+
+    newLows.sort((a, b) => (a.changePct ?? 0) - (b.changePct ?? 0));
+    newHighs.sort((a, b) => (b.changePct ?? 0) - (a.changePct ?? 0));
+
+    const byCanonicalCurrency = new Map<string, { canonicalId: string; currency: string; items: Outlier[] }>();
+
+    for (const link of links) {
+      const latest = latestBySourceItem.get(`${link.sourceSlug}:${link.itemId}`);
+      if (!latest) continue;
+      if (!Number.isFinite(latest.price)) continue;
+      const key = `${link.canonicalId}:${latest.currency}`;
+      const entry: Outlier = {
+        canonicalId: link.canonicalId,
+        canonicalName: null,
+        currency: latest.currency,
+        medianPrice: 0,
+        deviationPct: 0,
+        sourceSlug: latest.sourceSlug,
+        sourceDisplayName: latest.sourceDisplayName,
+        itemId: latest.itemId,
+        name: latest.name,
+        price: latest.price,
+        lastSeenAt: latest.lastSeenAt,
+        url: latest.url
+      };
+      const bucket = byCanonicalCurrency.get(key);
+      if (bucket) {
+        bucket.items.push(entry);
+      } else {
+        byCanonicalCurrency.set(key, { canonicalId: link.canonicalId, currency: latest.currency, items: [entry] });
+      }
+    }
+
+    const outliers: Outlier[] = [];
+    const outlierCanonicalIds = new Set<string>();
+    let outlierCount = 0;
+
+    for (const bucket of byCanonicalCurrency.values()) {
+      if (bucket.items.length < 3) continue;
+      const prices = bucket.items.map((i) => i.price);
+      const med = median(prices);
+      if (med === null || !Number.isFinite(med) || med <= 0) continue;
+
+      for (const item of bucket.items) {
+        const deviationPct = ((item.price - med) / med) * 100;
+        if (Math.abs(deviationPct) < outlierThresholdPct) continue;
+        outliers.push({
+          ...item,
+          medianPrice: med,
+          deviationPct
+        });
+        outlierCount += 1;
+        outlierCanonicalIds.add(bucket.canonicalId);
+      }
+    }
+
+    const canonicalNameById = new Map<string, string>();
+    for (const id of outlierCanonicalIds) {
+      const doc = await ctx.db.get(id as any);
+      if (doc && typeof (doc as any).name === "string") canonicalNameById.set(id, (doc as any).name);
+    }
+
+    for (const o of outliers) {
+      o.canonicalName = canonicalNameById.get(o.canonicalId) ?? null;
+    }
+
+    outliers.sort((a, b) => Math.abs(b.deviationPct) - Math.abs(a.deviationPct));
+
+    sustainedDrops.sort((a, b) => a.trendPct - b.trendPct);
+    sustainedRises.sort((a, b) => b.trendPct - a.trendPct);
+
+    coverageBySource.sort((a, b) => b.unlinkedProducts - a.unlinkedProducts || b.missingPrices - a.missingPrices);
+
+    const canonicals = await ctx.db.query("canonicalProducts").collect();
+    const canonicalLinkStats = new Map<
+      string,
+      {
+        linkCount: number;
+        firstLinkedAt: number;
+        lastLinkedAt: number;
+      }
+    >();
+    for (const link of links) {
+      const key = link.canonicalId as unknown as string;
+      const entry = canonicalLinkStats.get(key);
+      if (!entry) {
+        canonicalLinkStats.set(key, {
+          linkCount: 1,
+          firstLinkedAt: link.createdAt,
+          lastLinkedAt: link.createdAt
+        });
+      } else {
+        entry.linkCount += 1;
+        entry.firstLinkedAt = Math.min(entry.firstLinkedAt, link.createdAt);
+        entry.lastLinkedAt = Math.max(entry.lastLinkedAt, link.createdAt);
+      }
+    }
+
+    const canonicalGaps: CanonicalCoverageGap[] = canonicals
+      .map((c) => {
+        const key = c._id as unknown as string;
+        const stats = canonicalLinkStats.get(key);
+        const linkCount = stats?.linkCount ?? 0;
+        return {
+          canonicalId: key,
+          name: c.name,
+          createdAt: c.createdAt,
+          linkCount,
+          firstLinkedAt: stats ? stats.firstLinkedAt : null,
+          lastLinkedAt: stats ? stats.lastLinkedAt : null
+        };
+      })
+      .filter((c) => c.linkCount <= 1)
+      .sort((a, b) => a.linkCount - b.linkCount || b.createdAt - a.createdAt)
+      .slice(0, 8);
 
     return {
       generatedAt: now,
       summary: {
         recentDrops: dropCount,
         recentSpikes: spikeCount,
+        newExtremes: newExtremesCount,
+        outliers: outlierCount,
         staleSources: staleSources.length,
         recentFailures: recentFailures.length
       },
@@ -144,9 +468,25 @@ export const snapshot = queryGeneric({
         drops: drops.slice(0, 8),
         spikes: spikes.slice(0, 6)
       },
+      streakTrends: {
+        sustainedDrops: sustainedDrops.slice(0, 6),
+        sustainedRises: sustainedRises.slice(0, 6)
+      },
+      extremes: {
+        newLows: newLows.slice(0, 6),
+        newHighs: newHighs.slice(0, 6)
+      },
+      outliers: outliers.slice(0, 10),
+      coverage: {
+        sources: coverageBySource.slice(0, 8),
+        canonicalGaps,
+        totals: {
+          unlinkedProducts: totalUnlinked,
+          missingPrices: totalMissingPrices
+        }
+      },
       staleSources,
       recentFailures
     };
   }
 });
-

@@ -6,6 +6,10 @@ import { authLogout, authValidateSession } from "../convexFns";
 import { DashboardPage } from "../pages/DashboardPage";
 import { InsightsPage } from "../pages/InsightsPage";
 import { LinkProductsPage } from "../pages/LinkProductsPage";
+import { ProductsPage } from "../pages/ProductsPage";
+import { CanonicalCreatePage } from "../pages/CanonicalCreatePage";
+import { CanonicalDetailPage } from "../pages/CanonicalDetailPage";
+import { CanonicalEditPage } from "../pages/CanonicalEditPage";
 import { AppLayout } from "./AppLayout";
 import { NotFoundPage } from "./NotFoundPage";
 import { PlaceholderPage } from "./PlaceholderPage";
@@ -65,7 +69,10 @@ export function AuthenticatedApp(props: { sessionToken: string; onLoggedOut: () 
         <Route element={<AppLayout session={session} onLogout={handleLogout} />}>
           <Route path="/" element={<DashboardPage sessionToken={props.sessionToken} />} />
           <Route path="/insights" element={<InsightsPage sessionToken={props.sessionToken} />} />
-          <Route path="/products" element={<PlaceholderPage title="Products" />} />
+          <Route path="/products" element={<ProductsPage sessionToken={props.sessionToken} />} />
+          <Route path="/products/new" element={<CanonicalCreatePage sessionToken={props.sessionToken} />} />
+          <Route path="/products/:canonicalId" element={<CanonicalDetailPage sessionToken={props.sessionToken} />} />
+          <Route path="/products/:canonicalId/edit" element={<CanonicalEditPage sessionToken={props.sessionToken} />} />
           <Route path="/link" element={<LinkProductsPage sessionToken={props.sessionToken} />} />
           <Route path="/prices" element={<PlaceholderPage title="Prices" />} />
           <Route path="/amazon-pricing" element={<PlaceholderPage title="Amazon Pricing" />} />
