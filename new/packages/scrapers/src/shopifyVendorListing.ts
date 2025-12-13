@@ -1,4 +1,5 @@
 import type { DiscoveredProduct } from "@corastuff/shared";
+import { load } from "cheerio";
 
 type ShopifyVariant = {
   available?: boolean;
@@ -140,18 +141,52 @@ function pickImageUrl(baseUrl: string, product: ShopifyProduct): string | undefi
   return undefined;
 }
 
+function isValidShopifyHandle(value: string) {
+  if (value.length === 0) return false;
+  const first = value.charCodeAt(0);
+  const isAlphaNum =
+    (first >= 48 && first <= 57) || (first >= 65 && first <= 90) || (first >= 97 && first <= 122);
+  if (!isAlphaNum) return false;
+  for (let i = 1; i < value.length; i += 1) {
+    const c = value.charCodeAt(i);
+    const ok =
+      c === 45 || // "-"
+      (c >= 48 && c <= 57) ||
+      (c >= 65 && c <= 90) ||
+      (c >= 97 && c <= 122);
+    if (!ok) return false;
+  }
+  return true;
+}
+
 function extractProductHandlesFromHtml(html: string): string[] {
   const handles: string[] = [];
   const seen = new Set<string>();
-  const re = /\/products\/([a-zA-Z0-9][a-zA-Z0-9-]*)/g;
-  for (const match of html.matchAll(re)) {
-    const handle = match[1]?.trim();
-    if (!handle) continue;
+  const $ = load(html);
+
+  $("a[href]").each((_, el) => {
+    const href = $(el).attr("href");
+    if (!href) return;
+
+    let u: URL;
+    try {
+      u = new URL(href, "https://example.invalid");
+    } catch {
+      return;
+    }
+
+    const parts = u.pathname.split("/").filter(Boolean);
+    const idx = parts.lastIndexOf("products");
+    if (idx === -1 || idx + 1 >= parts.length) return;
+    const handle = parts[idx + 1]?.trim();
+    if (!handle || !isValidShopifyHandle(handle)) return;
+
     const key = handle.toLowerCase();
-    if (seen.has(key)) continue;
+    if (seen.has(key)) return;
     seen.add(key);
     handles.push(handle);
-  }
+  });
+
   return handles;
 }
 

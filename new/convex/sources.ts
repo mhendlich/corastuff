@@ -151,6 +151,17 @@ export const seedDemo = mutationGeneric({
         config: { baseUrl: "https://www.digitec.ch/" }
       },
       {
+        slug: "decathlon_ch",
+        displayName: "Decathlon.ch (Blackroll demo)",
+        enabled: false,
+        type: "playwright" as const,
+        config: {
+          baseUrl: "https://www.decathlon.ch",
+          listingUrl: "https://www.decathlon.ch/de/brands/blackroll",
+          currency: "CHF"
+        }
+      },
+      {
         slug: "galaxus",
         displayName: "Galaxus (demo)",
         enabled: false,

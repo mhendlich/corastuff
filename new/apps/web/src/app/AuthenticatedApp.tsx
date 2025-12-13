@@ -91,10 +91,11 @@ export function AuthenticatedApp(props: { sessionToken: string; onLoggedOut: () 
           <Route path="/scrapers/sources/:slug" element={<SourceEditPage sessionToken={props.sessionToken} />} />
           <Route path="/scrapers/history" element={<ScrapeHistoryPage sessionToken={props.sessionToken} />} />
           <Route path="/scrapers/history/:runId" element={<ScrapeRunDetailPage sessionToken={props.sessionToken} />} />
-          <Route path="/scrapers/schedules" element={<ScraperSchedulesPage sessionToken={props.sessionToken} />} />
+          <Route path="/schedules" element={<ScraperSchedulesPage sessionToken={props.sessionToken} />} />
           <Route path="/history" element={<ScrapeHistoryPage sessionToken={props.sessionToken} />} />
           <Route path="/builder" element={<ScraperBuilderPage sessionToken={props.sessionToken} />} />
           <Route path="/scrapers/builder" element={<Navigate to="/builder" replace />} />
+          <Route path="/scrapers/schedules" element={<Navigate to="/schedules" replace />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

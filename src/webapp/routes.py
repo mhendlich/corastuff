@@ -1345,7 +1345,12 @@ async def reset_all_data(request: Request, _: str = Depends(require_auth)):
 # --- Scraper Schedules ---
 
 
-@router.get("/scrapers/schedules", response_class=HTMLResponse)
+@router.get("/scrapers/schedules", include_in_schema=False)
+async def schedules_page_legacy(request: Request, _: str = Depends(require_auth)):
+    return RedirectResponse("/schedules", status_code=307)
+
+
+@router.get("/schedules", response_class=HTMLResponse)
 async def schedules_page(request: Request, _: str = Depends(require_auth)):
     """Scraper schedule configuration page."""
     db = get_db(request)
@@ -1375,11 +1380,25 @@ async def schedules_page(request: Request, _: str = Depends(require_auth)):
             "request": request,
             "scrapers": scrapers_with_schedules,
             "scheduler_status": scheduler_status,
+            "scraper_concurrency_limit": db.get_scraper_concurrency_limit(),
         },
     )
 
 
-@router.post("/scrapers/schedules/save-all", response_class=HTMLResponse)
+@router.post("/scrapers/schedules/settings", response_class=HTMLResponse, include_in_schema=False)
+@router.post("/schedules/settings", response_class=HTMLResponse)
+async def update_schedule_settings(
+    request: Request,
+    scraper_concurrency_limit: int = Form(10),
+    _: str = Depends(require_auth),
+):
+    db = get_db(request)
+    db.set_scraper_concurrency_limit(scraper_concurrency_limit)
+    return RedirectResponse("/schedules", status_code=303)
+
+
+@router.post("/scrapers/schedules/save-all", response_class=HTMLResponse, include_in_schema=False)
+@router.post("/schedules/save-all", response_class=HTMLResponse)
 async def save_all_schedules(request: Request, _: str = Depends(require_auth)):
     """Save all schedule configurations at once."""
     db = get_db(request)
@@ -1398,10 +1417,11 @@ async def save_all_schedules(request: Request, _: str = Depends(require_auth)):
         db.upsert_schedule(name, enabled, interval_minutes)
 
     # Redirect back to schedules page
-    return RedirectResponse("/scrapers/schedules", status_code=303)
+    return RedirectResponse("/schedules", status_code=303)
 
 
-@router.post("/scrapers/schedules/{name}", response_class=HTMLResponse)
+@router.post("/scrapers/schedules/{name}", response_class=HTMLResponse, include_in_schema=False)
+@router.post("/schedules/{name}", response_class=HTMLResponse)
 async def update_schedule(
     request: Request,
     name: str,
@@ -1449,7 +1469,7 @@ async def start_scheduler(request: Request, _: str = Depends(require_auth)):
     if not scheduler.is_running:
         scheduler.start()
 
-    return RedirectResponse("/scrapers/schedules", status_code=303)
+    return RedirectResponse("/schedules", status_code=303)
 
 
 @router.post("/scheduler/stop", response_class=HTMLResponse)
@@ -1460,7 +1480,7 @@ async def stop_scheduler(request: Request, _: str = Depends(require_auth)):
     if scheduler and scheduler.is_running:
         scheduler.stop()
 
-    return RedirectResponse("/scrapers/schedules", status_code=303)
+    return RedirectResponse("/schedules", status_code=303)
 
 
 @router.get("/scheduler/status", response_class=HTMLResponse)

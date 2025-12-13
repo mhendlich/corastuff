@@ -10,7 +10,7 @@ export function pageMeta(pathname: string): { title: string; subtitle: string } 
   if (pathname.startsWith("/scrapers/history")) return { title: "History", subtitle: "Scrape run history and artifacts." };
   if (pathname.startsWith("/scrapers/sources"))
     return { title: "Sources", subtitle: "Create and test source configs before scheduling." };
-  if (pathname.startsWith("/scrapers/schedules"))
+  if (pathname.startsWith("/schedules") || pathname.startsWith("/scrapers/schedules"))
     return { title: "Automation", subtitle: "Control schedules and scraper concurrency." };
   if (pathname.startsWith("/builder") || pathname.startsWith("/scrapers/builder"))
     return { title: "Scraper Builder", subtitle: "Build a new source config with a dry-run preview." };

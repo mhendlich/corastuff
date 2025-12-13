@@ -22,7 +22,7 @@ export const NAV_ITEMS: Array<{ to: string; label: string; icon: TablerIcon; dis
   { to: "/amazon-pricing", label: "Amazon Pricing", icon: IconRoute },
   { to: "/scrapers", label: "Scrapers", icon: IconRobot },
   { to: "/scrapers/sources", label: "Sources", icon: IconSettings },
-  { to: "/scrapers/schedules", label: "Automation", icon: IconTools },
+  { to: "/schedules", label: "Automation", icon: IconTools },
   { to: "/history", label: "History", icon: IconHistory },
   { to: "/builder", label: "Scraper Builder", icon: IconWand }
 ];

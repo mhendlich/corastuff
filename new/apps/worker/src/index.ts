@@ -13,6 +13,12 @@ import {
   type RunScraperJobData
 } from "@corastuff/queue";
 import {
+  scrapeAmazonStorefront,
+  scrapeArtztProductPage,
+  scrapeBergzeitBrandListing,
+  scrapeBike24BrandListing,
+  scrapeBunertProductPage,
+  scrapeDecathlonChBrandPage,
   scrapeGlobetrotterBrandPage,
   scrapeShopifyCollectionProductsJson,
   scrapeShopifyVendorListingProducts
@@ -230,6 +236,38 @@ function asNonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function parseAmazonStorefrontConfig(
+  sourceSlug: string,
+  config: unknown
+): {
+  sourceSlug: string;
+  storeUrl: string;
+  baseUrl: string;
+  currency?: string;
+} | null {
+  if (typeof config !== "object" || config === null || Array.isArray(config)) return null;
+  const cfg = config as Record<string, unknown>;
+
+  const storeUrl =
+    asNonEmptyString(cfg.amazonStoreUrl) ??
+    asNonEmptyString(cfg.storeUrl) ??
+    asNonEmptyString(cfg.storefrontUrl) ??
+    asNonEmptyString(cfg.sourceUrl);
+  if (!storeUrl) return null;
+
+  let u: URL;
+  try {
+    u = new URL(storeUrl);
+  } catch {
+    return null;
+  }
+  if (!u.hostname.toLowerCase().includes("amazon.")) return null;
+
+  const baseUrl = asNonEmptyString(cfg.baseUrl) ?? u.origin;
+  const currency = asNonEmptyString(cfg.currency);
+  return { sourceSlug, storeUrl, baseUrl, ...(currency ? { currency } : {}) };
+}
+
 function parseShopifyCollectionConfig(
   sourceSlug: string,
   config: unknown
@@ -334,6 +372,14 @@ function parseGlobetrotterBrandConfig(
   const listingUrl = asNonEmptyString(cfg.listingUrl) ?? asNonEmptyString(cfg.sourceUrl);
   if (!listingUrl) return null;
 
+  try {
+    const u = new URL(listingUrl);
+    const host = u.hostname.toLowerCase();
+    if (!host.includes("globetrotter.") && !host.endsWith("globetrotter.de")) return null;
+  } catch {
+    return null;
+  }
+
   const baseUrl =
     asNonEmptyString(cfg.baseUrl) ??
     (() => {
@@ -349,7 +395,142 @@ function parseGlobetrotterBrandConfig(
   return { sourceSlug, baseUrl, listingUrl, ...(currency ? { currency } : {}) };
 }
 
+function parseArtztProductConfig(
+  sourceSlug: string,
+  config: unknown
+): {
+  sourceSlug: string;
+  productUrl: string;
+  baseUrl?: string;
+} | null {
+  if (typeof config !== "object" || config === null || Array.isArray(config)) return null;
+  const cfg = config as Record<string, unknown>;
+
+  const productUrl = asNonEmptyString(cfg.productUrl) ?? asNonEmptyString(cfg.sourceUrl) ?? asNonEmptyString(cfg.url);
+  if (!productUrl) return null;
+
+  try {
+    const u = new URL(productUrl);
+    const host = u.hostname.toLowerCase();
+    if (!host.includes("artzt.") && !host.endsWith("artzt.eu")) return null;
+  } catch {
+    return null;
+  }
+
+  const baseUrl = asNonEmptyString(cfg.baseUrl);
+  return { sourceSlug, productUrl, ...(baseUrl ? { baseUrl } : {}) };
+}
+
+function parseBunertProductConfig(
+  sourceSlug: string,
+  config: unknown
+): {
+  sourceSlug: string;
+  productUrl: string;
+  currency?: string;
+} | null {
+  if (typeof config !== "object" || config === null || Array.isArray(config)) return null;
+  const cfg = config as Record<string, unknown>;
+
+  const productUrl = asNonEmptyString(cfg.productUrl) ?? asNonEmptyString(cfg.sourceUrl) ?? asNonEmptyString(cfg.url);
+  if (!productUrl) return null;
+
+  try {
+    const u = new URL(productUrl);
+    const host = u.hostname.toLowerCase();
+    if (!host.includes("bunert.") && !host.endsWith("bunert.de")) return null;
+  } catch {
+    return null;
+  }
+
+  const currency = asNonEmptyString(cfg.currency);
+  return { sourceSlug, productUrl, ...(currency ? { currency } : {}) };
+}
+
+function parseBergzeitBrandConfig(
+  sourceSlug: string,
+  config: unknown
+): {
+  sourceSlug: string;
+  listingUrl: string;
+  baseUrl?: string;
+} | null {
+  if (typeof config !== "object" || config === null || Array.isArray(config)) return null;
+  const cfg = config as Record<string, unknown>;
+
+  const listingUrl = asNonEmptyString(cfg.listingUrl) ?? asNonEmptyString(cfg.sourceUrl) ?? asNonEmptyString(cfg.url);
+  if (!listingUrl) return null;
+
+  try {
+    const u = new URL(listingUrl);
+    const host = u.hostname.toLowerCase();
+    if (!host.includes("bergzeit.") && !host.endsWith("bergzeit.de")) return null;
+  } catch {
+    return null;
+  }
+
+  const baseUrl = asNonEmptyString(cfg.baseUrl);
+  return { sourceSlug, listingUrl, ...(baseUrl ? { baseUrl } : {}) };
+}
+
+function parseBike24BrandConfig(
+  sourceSlug: string,
+  config: unknown
+): {
+  sourceSlug: string;
+  listingUrl: string;
+} | null {
+  if (typeof config !== "object" || config === null || Array.isArray(config)) return null;
+  const cfg = config as Record<string, unknown>;
+
+  const listingUrl = asNonEmptyString(cfg.listingUrl) ?? asNonEmptyString(cfg.sourceUrl) ?? asNonEmptyString(cfg.url);
+  if (!listingUrl) return null;
+
+  try {
+    const u = new URL(listingUrl);
+    const host = u.hostname.toLowerCase();
+    if (!host.endsWith("bike24.com")) return null;
+  } catch {
+    return null;
+  }
+
+  return { sourceSlug, listingUrl };
+}
+
+function parseDecathlonChBrandConfig(
+  sourceSlug: string,
+  config: unknown
+): {
+  sourceSlug: string;
+  listingUrl: string;
+  baseUrl?: string;
+  currency?: string;
+} | null {
+  if (typeof config !== "object" || config === null || Array.isArray(config)) return null;
+  const cfg = config as Record<string, unknown>;
+
+  const listingUrl = asNonEmptyString(cfg.listingUrl) ?? asNonEmptyString(cfg.sourceUrl) ?? asNonEmptyString(cfg.url);
+  if (!listingUrl) return null;
+
+  try {
+    const u = new URL(listingUrl);
+    const host = u.hostname.toLowerCase();
+    if (!host.endsWith("decathlon.ch")) return null;
+  } catch {
+    return null;
+  }
+
+  const baseUrl = asNonEmptyString(cfg.baseUrl);
+  const currency = asNonEmptyString(cfg.currency);
+  return { sourceSlug, listingUrl, ...(baseUrl ? { baseUrl } : {}), ...(currency ? { currency } : {}) };
+}
+
 const FALLBACK_SOURCE_CONFIGS: Record<string, Record<string, unknown>> = {
+  amazon_de: {
+    storeUrl:
+      "https://www.amazon.de/stores/page/03098AB4-BDD5-4A23-A7DD-5C10153C5D58?ingress=2&lp_context_asin=B00EQ4PZHY&lp_context_query=blackroll&store_ref=bl_ast_dp_brandLogo_sto&ref_=ast_bln",
+    currency: "EUR"
+  },
   cardiofitness: {
     baseUrl: "https://www.cardiofitness.de/",
     sourceUrl: "https://www.cardiofitness.de/collections/blackroll",
@@ -367,6 +548,22 @@ const FALLBACK_SOURCE_CONFIGS: Record<string, Record<string, unknown>> = {
     baseUrl: "https://www.globetrotter.de/",
     listingUrl: "https://www.globetrotter.de/marken/blackroll/",
     currency: "EUR"
+  },
+  bergzeit: {
+    baseUrl: "https://www.bergzeit.de/",
+    listingUrl: "https://www.bergzeit.de/marken/blackroll/"
+  },
+  bike24: {
+    listingUrl: "https://www.bike24.com/brands/blackroll/category-76"
+  },
+  decathlon_ch: {
+    baseUrl: "https://www.decathlon.ch",
+    listingUrl: "https://www.decathlon.ch/de/brands/blackroll",
+    currency: "CHF"
+  },
+  artzt: {
+    baseUrl: "https://artzt.eu/",
+    productUrl: "https://artzt.eu/en/products/blackroll-standard"
   }
 };
 
@@ -375,6 +572,91 @@ async function scrapeSource(args: {
   config: unknown;
   log: (msg: string) => void;
 }): Promise<ScrapeResult> {
+  const amazon = parseAmazonStorefrontConfig(args.sourceSlug, args.config);
+  if (amazon) {
+    const { products } = await scrapeAmazonStorefront({
+      sourceSlug: amazon.sourceSlug,
+      storeUrl: amazon.storeUrl,
+      baseUrl: amazon.baseUrl,
+      currency: amazon.currency,
+      log: args.log
+    });
+    return {
+      sourceSlug: amazon.sourceSlug,
+      sourceUrl: amazon.storeUrl,
+      scrapedAt: new Date().toISOString(),
+      totalProducts: products.length,
+      products
+    };
+  }
+
+  const artzt = parseArtztProductConfig(args.sourceSlug, args.config);
+  if (artzt) {
+    const { products } = await scrapeArtztProductPage({
+      sourceSlug: artzt.sourceSlug,
+      productUrl: artzt.productUrl,
+      baseUrl: artzt.baseUrl,
+      log: args.log
+    });
+    return {
+      sourceSlug: artzt.sourceSlug,
+      sourceUrl: artzt.productUrl,
+      scrapedAt: new Date().toISOString(),
+      totalProducts: products.length,
+      products
+    };
+  }
+
+  const bunert = parseBunertProductConfig(args.sourceSlug, args.config);
+  if (bunert) {
+    const { products } = await scrapeBunertProductPage({
+      sourceSlug: bunert.sourceSlug,
+      productUrl: bunert.productUrl,
+      currency: bunert.currency,
+      log: args.log
+    });
+    return {
+      sourceSlug: bunert.sourceSlug,
+      sourceUrl: bunert.productUrl,
+      scrapedAt: new Date().toISOString(),
+      totalProducts: products.length,
+      products
+    };
+  }
+
+  const bergzeit = parseBergzeitBrandConfig(args.sourceSlug, args.config);
+  if (bergzeit) {
+    const { products } = await scrapeBergzeitBrandListing({
+      sourceSlug: bergzeit.sourceSlug,
+      listingUrl: bergzeit.listingUrl,
+      baseUrl: bergzeit.baseUrl,
+      log: args.log
+    });
+    return {
+      sourceSlug: bergzeit.sourceSlug,
+      sourceUrl: bergzeit.listingUrl,
+      scrapedAt: new Date().toISOString(),
+      totalProducts: products.length,
+      products
+    };
+  }
+
+  const bike24 = parseBike24BrandConfig(args.sourceSlug, args.config);
+  if (bike24) {
+    const { products } = await scrapeBike24BrandListing({
+      sourceSlug: bike24.sourceSlug,
+      listingUrl: bike24.listingUrl,
+      log: args.log
+    });
+    return {
+      sourceSlug: bike24.sourceSlug,
+      sourceUrl: bike24.listingUrl,
+      scrapedAt: new Date().toISOString(),
+      totalProducts: products.length,
+      products
+    };
+  }
+
   const globetrotter = parseGlobetrotterBrandConfig(args.sourceSlug, args.config);
   if (globetrotter) {
     const { products } = await scrapeGlobetrotterBrandPage({
@@ -387,6 +669,24 @@ async function scrapeSource(args: {
     return {
       sourceSlug: globetrotter.sourceSlug,
       sourceUrl: globetrotter.listingUrl,
+      scrapedAt: new Date().toISOString(),
+      totalProducts: products.length,
+      products
+    };
+  }
+
+  const decathlon = parseDecathlonChBrandConfig(args.sourceSlug, args.config);
+  if (decathlon) {
+    const { products } = await scrapeDecathlonChBrandPage({
+      sourceSlug: decathlon.sourceSlug,
+      listingUrl: decathlon.listingUrl,
+      baseUrl: decathlon.baseUrl,
+      currency: decathlon.currency,
+      log: args.log
+    });
+    return {
+      sourceSlug: decathlon.sourceSlug,
+      sourceUrl: decathlon.listingUrl,
       scrapedAt: new Date().toISOString(),
       totalProducts: products.length,
       products
@@ -433,7 +733,7 @@ async function scrapeSource(args: {
   }
 
   throw new Error(
-    `No scraper implemented for sourceSlug "${args.sourceSlug}" (expected collectionProductsJsonUrl, vendorListingUrl, or listingUrl in config)`
+    `No scraper implemented for sourceSlug "${args.sourceSlug}" (expected storeUrl (Amazon), collectionProductsJsonUrl, vendorListingUrl, or listingUrl in config)`
   );
 }
 

@@ -161,7 +161,7 @@ Old reference: `src/webapp/templates/scrapers/*`, `src/webapp/routes.py` scraper
   - [x] (Nice-to-have) Expand auto-detection/templates (locale prefixes, non-Globetrotter Playwright recipes, etc).
   - [x] (Nice-to-have) Allow multiple saved builder drafts per user (instead of singleton `current`).
 
-## 8) Automation / schedules parity (`/scrapers/schedules`)
+## 8) Automation / schedules parity (`/schedules`)
 
 Old reference: `src/webapp/templates/scrapers/schedules.html`, `src/webapp/routes.py` scheduler endpoints, `src/db.py` schedules + concurrency settings.
 
@@ -184,23 +184,25 @@ Old scrapers are code-defined; new stack is config-driven (`sources.config`).
 
 ## 10) Scraper coverage parity (port Python scrapers → TS or decide hybrid)
 
-- [ ] Use cheerio for extraction instead of regex where it makes sense. Migrate existing scrapers to use it and use it for new scrapers too.
+- [x] Use cheerio for extraction instead of regex where it makes sense. Migrate existing scrapers to use it and use it for new scrapers too.
 
 Old sources exist as Python scrapers in `src/scrapers/*.py`. New TS scrapers currently cover only:
 - Shopify collection JSON (`new/packages/scrapers/src/shopifyCollection.ts`)
 - Shopify vendor listing (`new/packages/scrapers/src/shopifyVendorListing.ts`)
 - Globetrotter brand listing (`new/packages/scrapers/src/globetrotterBrand.ts`)
+- Amazon storefront listing (`new/packages/scrapers/src/amazonStorefront.ts`)
 
 Remaining old scrapers to cover (parity target):
-- [ ] `amazon` (plus any Amazon DE variant used)
-- [ ] `artzt`
-- [ ] `bergzeit`
-- [ ] `bike24`
-- [ ] `bodyguard_shop`
-- [ ] `bunert`
-- [ ] `cardiofitness` (already partially covered via Shopify JSON, but validate parity)
-- [ ] `decathlon_ch`
-- [ ] `dein_vital_shop` (already partially covered via Shopify JSON, but validate parity)
+- [x] `amazon` (plus any Amazon DE variant used)
+  - Implemented as `scrapeAmazonStorefront` (Playwright); worker auto-detects when `storeUrl`/`sourceUrl` is an `amazon.*` URL.
+- [x] `artzt`
+- [x] `bergzeit`
+- [x] `bike24`
+- [x] `bodyguard_shop`
+- [x] `bunert`
+- [x] `cardiofitness` (Shopify JSON validated)
+- [x] `decathlon_ch`
+- [x] `dein_vital_shop` (Shopify JSON validated)
 - [ ] `digitec` (Playwright + stealth/UA considerations)
 - [ ] `fitshop`
 - [ ] `galaxus` (Playwright + stealth/UA considerations)
@@ -227,7 +229,7 @@ Cross-cutting scraper parity tasks:
 - [ ] Bring over per-site “browser context” knobs (UA/locale/viewport/stealth init) for protected storefronts (see repo notes in `AGENTS.md`).
 - [ ] Standardize product output: stable `itemId`, `name`, `price`, `currency`, `url`, `imageUrl` (and ensure currency inference matches old behavior).
 - [ ] Ensure image fetching works on bot-protected sites (headers mimicking `<img>` request).
-- [ ] Add “products missing stable ID” detection and surface it in linking UI (old: `unlinked_missing_id` warnings).
+- [x] Add “products missing stable ID” detection and surface it in linking UI (old: `unlinked_missing_id` warnings).
 
 ## 12) Operational parity / polish
 

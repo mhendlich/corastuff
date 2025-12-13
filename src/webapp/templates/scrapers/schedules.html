@@ -57,7 +57,7 @@
                     <h3 class="text-sm font-semibold text-white">Concurrency</h3>
                     <p class="text-xs text-slate-400 mt-0.5">Caps how many scrapers can run at the same time.</p>
                 </div>
-                <form action="/scrapers/schedules/settings" method="POST" class="flex items-end gap-2">
+                <form action="/schedules/settings" method="POST" class="flex items-end gap-2">
                     <div class="flex-1">
                         <label for="scraper-concurrency-limit" class="block text-[11px] uppercase tracking-widest text-slate-400">Max concurrent scrapers</label>
                         <input id="scraper-concurrency-limit" name="scraper_concurrency_limit" type="number" min="1" max="100" value="{{ scraper_concurrency_limit }}"
@@ -72,7 +72,7 @@
         </div>
 
         <div class="lg:col-span-2">
-            <form action="/scrapers/schedules/save-all" method="POST" id="schedules-form" class="space-y-4">
+            <form action="/schedules/save-all" method="POST" id="schedules-form" class="space-y-4">
                 <div class="flex items-center justify-between px-1">
                     <div>
                         <h2 class="text-sm font-semibold text-white/90">Per‑scraper schedules</h2>
