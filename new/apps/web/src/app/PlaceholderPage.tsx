@@ -1,11 +1,14 @@
+import { Container, Paper, Stack, Text, Title } from "@mantine/core";
+
 export function PlaceholderPage(props: { title: string; subtitle?: string }) {
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
-      <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-        <div className="text-sm font-medium">{props.title}</div>
-        <div className="mt-1 text-sm text-slate-300">{props.subtitle ?? "Coming soon."}</div>
-      </div>
-    </div>
+    <Container size="md" py="xl">
+      <Paper withBorder radius="lg" p="xl">
+        <Stack gap="xs">
+          <Title order={3}>{props.title}</Title>
+          <Text c="dimmed">{props.subtitle ?? "Coming soon."}</Text>
+        </Stack>
+      </Paper>
+    </Container>
   );
 }
-

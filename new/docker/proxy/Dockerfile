@@ -18,8 +18,6 @@ COPY tsconfig.base.json /app/tsconfig.base.json
 COPY apps/web/tsconfig.json /app/apps/web/tsconfig.json
 COPY apps/web/vite.config.ts /app/apps/web/vite.config.ts
 COPY apps/web/index.html /app/apps/web/index.html
-COPY apps/web/postcss.config.cjs /app/apps/web/postcss.config.cjs
-COPY apps/web/tailwind.config.cjs /app/apps/web/tailwind.config.cjs
 COPY apps/web/public /app/apps/web/public
 COPY apps/web/src /app/apps/web/src
 COPY packages/shared/src /app/packages/shared/src

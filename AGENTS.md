@@ -17,3 +17,8 @@
 - For Shopify `.../products.json` endpoints, `products[].images` is often a list of image objects; prefer `images[0].src` (don’t assume it’s a list of strings).
 - Some Shopify vendor pages (`/collections/vendors?q=<vendor>`) don’t expose a working `.../collections/vendors/products.json`; scrape product handles from the rendered vendor listing and then fetch each product via `.../products/<handle>.json` (stable title/variants/images).
 - Cookie-consent overlays (e.g. Didomi) can include “More info” buttons (like `Weitere Informationen`) that accidentally match naive “load more” selectors; scope “load more” lookups to the product grid/container or use more specific attributes.
+
+
+## General rules
+- When implementing UI in the new frontend, use Mantine with CSS Modules. Build reusable components and use them throughout the app.
+- When working on the new project and youre finished, restart the services so i can always see the newest version in the browser.

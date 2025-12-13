@@ -1,0 +1,25 @@
+.tileNeutral {
+  background: color-mix(in srgb, var(--mantine-color-dark-8) 62%, transparent);
+}
+
+.tileBrand {
+  background:
+    radial-gradient(400px 240px at 30% 10%, rgba(120, 80, 255, 0.35), transparent 70%),
+    radial-gradient(420px 250px at 90% 30%, rgba(65, 220, 255, 0.22), transparent 70%),
+    color-mix(in srgb, var(--mantine-color-dark-8) 55%, transparent);
+}
+
+.tileWarn {
+  background:
+    radial-gradient(420px 260px at 30% 10%, rgba(255, 200, 80, 0.22), transparent 70%),
+    radial-gradient(420px 260px at 90% 30%, rgba(255, 90, 210, 0.12), transparent 70%),
+    color-mix(in srgb, var(--mantine-color-dark-8) 55%, transparent);
+}
+
+.tileDanger {
+  background:
+    radial-gradient(420px 260px at 30% 10%, rgba(255, 80, 120, 0.22), transparent 70%),
+    radial-gradient(420px 260px at 90% 30%, rgba(120, 80, 255, 0.12), transparent 70%),
+    color-mix(in srgb, var(--mantine-color-dark-8) 55%, transparent);
+}
+

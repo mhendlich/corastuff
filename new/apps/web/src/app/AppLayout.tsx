@@ -1,74 +1,148 @@
 import type { SessionInfo } from "../convexFns";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import {
+  ActionIcon,
+  AppShell,
+  Badge,
+  Box,
+  Burger,
+  Button,
+  Group,
+  ScrollArea,
+  Stack,
+  Text,
+  ThemeIcon,
+  Title,
+  Tooltip
+} from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
+import { IconLogout2 } from "@tabler/icons-react";
+import { NavLink as RouterNavLink, Outlet, useLocation } from "react-router-dom";
 import { fmtTs } from "../lib/time";
 import { NAV_ITEMS } from "./nav";
 import { pageMeta } from "./pageMeta";
+import classes from "./AppLayout.module.css";
 
 export function AppLayout(props: { session: SessionInfo; onLogout: () => Promise<void> }) {
   const location = useLocation();
   const meta = pageMeta(location.pathname);
+  const [mobileOpened, mobile] = useDisclosure(false);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="flex min-h-screen">
-        <aside className="hidden w-64 shrink-0 border-r border-slate-800 bg-slate-950/60 md:block">
-          <div className="px-4 py-4">
-            <div className="text-base font-semibold">Corastuff</div>
-            <div className="mt-0.5 text-xs text-slate-500">new stack</div>
-          </div>
-          <nav className="px-2 pb-4">
-            {NAV_ITEMS.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.disabled ? location.pathname : item.to}
-                aria-disabled={item.disabled}
-                onClick={(e) => {
-                  if (item.disabled) e.preventDefault();
-                }}
-                className={({ isActive }) =>
-                  [
-                    "block rounded-md px-3 py-2 text-sm",
-                    item.disabled ? "cursor-not-allowed text-slate-600" : "hover:bg-slate-900/50",
-                    !item.disabled && isActive ? "bg-slate-900/60 text-slate-100" : ""
-                  ].join(" ")
-                }
+    <AppShell
+      header={{ height: 64 }}
+      navbar={{
+        width: 280,
+        breakpoint: "md",
+        collapsed: { mobile: !mobileOpened }
+      }}
+      padding="lg"
+      className={classes.shell}
+    >
+      <AppShell.Header className={classes.header}>
+        <Group h="100%" px="lg" justify="space-between" gap="lg">
+          <Group gap="sm" wrap="nowrap">
+            <Burger opened={mobileOpened} onClick={mobile.toggle} hiddenFrom="md" size="sm" />
+            <Box className={classes.brandMark} />
+            <Box>
+              <Text size="xs" c="dimmed" className={classes.breadcrumb}>
+                Corastuff / {meta.title}
+              </Text>
+              <Title order={4} className={classes.pageTitle}>
+                {meta.title}
+              </Title>
+              <Text size="xs" c="dimmed" lineClamp={1}>
+                {meta.subtitle}
+              </Text>
+            </Box>
+          </Group>
+
+          <Group gap="sm">
+            <Badge variant="light" color="gray" visibleFrom="sm">
+              {props.session.kind}
+              {props.session.label ? ` (${props.session.label})` : ""} • expires {fmtTs(props.session.expiresAt)}
+            </Badge>
+            <Tooltip label="Logout" withArrow>
+              <ActionIcon
+                variant="default"
+                size="lg"
+                onClick={() => void props.onLogout()}
+                aria-label="Logout"
               >
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
-        </aside>
+                <IconLogout2 size={18} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
+        </Group>
+      </AppShell.Header>
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/80 backdrop-blur">
-            <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-3">
-              <div className="min-w-0">
-                <div className="truncate text-[11px] text-slate-500">Corastuff / {meta.title}</div>
-                <div className="truncate text-sm font-medium">{meta.title}</div>
-                <div className="truncate text-xs text-slate-400">{meta.subtitle}</div>
-              </div>
-              <div className="flex shrink-0 items-center gap-3">
-                <div className="hidden text-xs text-slate-500 sm:block">
-                  {props.session.kind}
-                  {props.session.label ? ` (${props.session.label})` : ""} • expires {fmtTs(props.session.expiresAt)}
-                </div>
-                <button
-                  className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 hover:bg-slate-800"
-                  type="button"
-                  onClick={() => void props.onLogout()}
-                >
-                  Logout
-                </button>
-              </div>
+      <AppShell.Navbar className={classes.navbar}>
+        <AppShell.Section px="md" py="md">
+          <Group justify="space-between" align="flex-start">
+            <div>
+              <Title order={4} className={classes.logo}>
+                Corastuff
+              </Title>
+              <Text size="xs" c="dimmed">
+                internal console
+              </Text>
             </div>
-          </header>
+            <Button
+              variant="subtle"
+              color="gray"
+              size="xs"
+              onClick={() => void props.onLogout()}
+              leftSection={<IconLogout2 size={14} />}
+              visibleFrom="md"
+            >
+              Logout
+            </Button>
+          </Group>
+        </AppShell.Section>
 
-          <main className="flex-1">
-            <Outlet />
-          </main>
-        </div>
-      </div>
-    </div>
+        <AppShell.Section component={ScrollArea} scrollbarSize={8} className={classes.navScroll}>
+          <Stack gap={6} p="md">
+            {NAV_ITEMS.map((item) => {
+              const active =
+                item.to === "/"
+                  ? location.pathname === "/"
+                  : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+
+              return (
+                <Button
+                  key={item.to}
+                  component={RouterNavLink}
+                  to={item.disabled ? location.pathname : item.to}
+                  variant={active ? "light" : "subtle"}
+                  color={active ? "violet" : "gray"}
+                  justify="flex-start"
+                  leftSection={
+                    <ThemeIcon variant={active ? "light" : "transparent"} color={active ? "violet" : "gray"}>
+                      <item.icon size={18} />
+                    </ThemeIcon>
+                  }
+                  disabled={item.disabled}
+                  onClick={() => {
+                    if (!item.disabled) mobile.close();
+                  }}
+                  className={classes.navItem}
+                >
+                  {item.label}
+                </Button>
+              );
+            })}
+          </Stack>
+        </AppShell.Section>
+
+        <AppShell.Section px="md" py="md" className={classes.navFooter} visibleFrom="md">
+          <Text size="xs" c="dimmed">
+            Build the future. Don’t break prod.
+          </Text>
+        </AppShell.Section>
+      </AppShell.Navbar>
+
+      <AppShell.Main className={classes.main}>
+        <Outlet />
+      </AppShell.Main>
+    </AppShell>
   );
 }
-

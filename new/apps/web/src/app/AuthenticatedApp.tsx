@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { useEffect } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { Box, Container, Paper, Stack, Text, Title } from "@mantine/core";
 import { authLogout, authValidateSession } from "../convexFns";
 import { DashboardPage } from "../pages/DashboardPage";
 import { InsightsPage } from "../pages/InsightsPage";
@@ -8,6 +9,7 @@ import { LinkProductsPage } from "../pages/LinkProductsPage";
 import { AppLayout } from "./AppLayout";
 import { NotFoundPage } from "./NotFoundPage";
 import { PlaceholderPage } from "./PlaceholderPage";
+import backdrop from "./Backdrop.module.css";
 
 export function AuthenticatedApp(props: { sessionToken: string; onLoggedOut: () => void }) {
   const session = useQuery(authValidateSession, { sessionToken: props.sessionToken });
@@ -21,23 +23,31 @@ export function AuthenticatedApp(props: { sessionToken: string; onLoggedOut: () 
 
   if (session === undefined) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100">
-        <div className="mx-auto max-w-3xl px-6 py-10">
-          <h1 className="text-2xl font-semibold">Corastuff (new)</h1>
-          <p className="mt-2 text-slate-300">Checking session…</p>
-        </div>
-      </div>
+      <Box className={backdrop.root}>
+        <Container size="sm" py={72}>
+          <Paper withBorder radius="lg" p="xl" className={backdrop.glass}>
+            <Stack gap="xs">
+              <Title order={2}>Corastuff</Title>
+              <Text c="dimmed">Checking session…</Text>
+            </Stack>
+          </Paper>
+        </Container>
+      </Box>
     );
   }
 
   if (session === null) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100">
-        <div className="mx-auto max-w-3xl px-6 py-10">
-          <h1 className="text-2xl font-semibold">Corastuff (new)</h1>
-          <p className="mt-2 text-slate-300">Session expired.</p>
-        </div>
-      </div>
+      <Box className={backdrop.root}>
+        <Container size="sm" py={72}>
+          <Paper withBorder radius="lg" p="xl" className={backdrop.glass}>
+            <Stack gap="xs">
+              <Title order={2}>Corastuff</Title>
+              <Text c="dimmed">Session expired.</Text>
+            </Stack>
+          </Paper>
+        </Container>
+      </Box>
     );
   }
 

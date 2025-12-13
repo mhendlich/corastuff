@@ -1,0 +1,15 @@
+.panel {
+  background: color-mix(in srgb, var(--mantine-color-dark-8) 58%, transparent);
+}
+
+.subtle {
+  background: color-mix(in srgb, var(--mantine-color-dark-9) 55%, transparent);
+}
+
+.danger {
+  border-color: color-mix(in srgb, var(--mantine-color-red-6) 45%, transparent);
+  background:
+    radial-gradient(600px 280px at 15% 0%, rgba(255, 80, 120, 0.18), transparent 60%),
+    color-mix(in srgb, var(--mantine-color-dark-9) 55%, transparent);
+}
+

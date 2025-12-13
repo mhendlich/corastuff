@@ -1,0 +1,61 @@
+.shell {
+  background:
+    radial-gradient(900px 600px at 35% -15%, rgba(120, 80, 255, 0.18), transparent 60%),
+    radial-gradient(900px 700px at 90% 15%, rgba(65, 220, 255, 0.12), transparent 60%),
+    linear-gradient(180deg, rgba(10, 10, 14, 1), rgba(6, 6, 10, 1));
+}
+
+.header {
+  background: color-mix(in srgb, var(--mantine-color-dark-9) 70%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid color-mix(in srgb, var(--mantine-color-dark-4) 35%, transparent);
+}
+
+.navbar {
+  background: color-mix(in srgb, var(--mantine-color-dark-9) 60%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--mantine-color-dark-4) 35%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+.navScroll {
+  border-top: 1px solid color-mix(in srgb, var(--mantine-color-dark-4) 25%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--mantine-color-dark-4) 25%, transparent);
+}
+
+.navFooter {
+  opacity: 0.75;
+}
+
+.navItem :global(.mantine-Button-section) {
+  margin-right: 10px;
+}
+
+.brandMark {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.25), transparent 40%),
+    linear-gradient(135deg, rgba(120, 80, 255, 1), rgba(65, 220, 255, 1));
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.breadcrumb {
+  letter-spacing: 0.04em;
+}
+
+.pageTitle {
+  line-height: 1.1;
+}
+
+.logo {
+  background: linear-gradient(135deg, rgba(235, 235, 255, 1), rgba(190, 255, 255, 0.9));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.main {
+  padding-bottom: 56px;
+}
+

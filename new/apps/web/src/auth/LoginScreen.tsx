@@ -1,6 +1,8 @@
 import { useAction } from "convex/react";
 import { useState } from "react";
+import { Anchor, Box, Button, Code, Container, Group, Paper, PasswordInput, Stack, Text, Title } from "@mantine/core";
 import { authLogin } from "../convexFns";
+import backdrop from "../app/Backdrop.module.css";
 
 export function LoginScreen(props: { onLoggedIn: (sessionToken: string) => void }) {
   const login = useAction(authLogin);
@@ -9,49 +11,64 @@ export function LoginScreen(props: { onLoggedIn: (sessionToken: string) => void 
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-10">
-        <h1 className="text-2xl font-semibold">Corastuff (new)</h1>
-        <p className="mt-2 text-sm text-slate-300">Sign in to continue.</p>
+    <Box className={backdrop.root}>
+      <Container size={420} py={84}>
+        <Paper withBorder radius="lg" p="xl" className={backdrop.glass}>
+          <Stack gap="md">
+            <Group justify="space-between" align="flex-start" gap="md">
+              <div>
+                <Title order={2}>Corastuff</Title>
+                <Text c="dimmed" size="sm" mt={4}>
+                  Sign in to continue.
+                </Text>
+              </div>
+              <Text size="xs" c="dimmed">
+                internal
+              </Text>
+            </Group>
 
-        <form
-          className="mt-6 space-y-3 rounded-xl border border-slate-800 bg-slate-900/30 p-4"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setSubmitting(true);
-            setError(null);
-            try {
-              const result = await login({ password });
-              props.onLoggedIn(result.sessionToken);
-            } catch (err) {
-              setError(err instanceof Error ? err.message : String(err));
-            } finally {
-              setSubmitting(false);
-            }
-          }}
-        >
-          <label className="block text-sm text-slate-300">
-            Password
-            <input
-              className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={submitting}
-            />
-          </label>
-          <button
-            className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm hover:bg-slate-800 disabled:opacity-50"
-            type="submit"
-            disabled={submitting || password.trim().length === 0}
-          >
-            {submitting ? "Signing in…" : "Sign in"}
-          </button>
-          {error ? <div className="text-sm text-rose-200">Login error: {error}</div> : null}
-        </form>
-      </div>
-    </div>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setSubmitting(true);
+                setError(null);
+                try {
+                  const result = await login({ password });
+                  props.onLoggedIn(result.sessionToken);
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : String(err));
+                } finally {
+                  setSubmitting(false);
+                }
+              }}
+            >
+              <Stack gap="sm">
+                <PasswordInput
+                  label="Password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.currentTarget.value)}
+                  autoComplete="current-password"
+                  disabled={submitting}
+                />
+                <Button type="submit" loading={submitting} disabled={password.trim().length === 0} fullWidth>
+                  Sign in
+                </Button>
+                {error ? (
+                  <Text c="red.2" size="sm">
+                    Login error: {error}
+                  </Text>
+                ) : (
+                  <Text c="dimmed" size="xs">
+                    Tip: set <Code>CORASTUFF_PASSWORD</Code> in Docker. Runtime config lives at{" "}
+                    <Anchor href="/config.js">/config.js</Anchor>.
+                  </Text>
+                )}
+              </Stack>
+            </form>
+          </Stack>
+        </Paper>
+      </Container>
+    </Box>
   );
 }
-
