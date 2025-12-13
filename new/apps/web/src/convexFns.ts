@@ -221,6 +221,16 @@ export type UnlinkedPage = {
   truncated: boolean;
 };
 
+export type ScraperBuilderJobDoc = {
+  _id: string;
+  _creationTime: number;
+  key: string;
+  draft?: unknown;
+  runId?: string | undefined;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type LinkSuggestion = {
   canonical: CanonicalDoc;
   score: number;
@@ -524,11 +534,41 @@ export const sourcesSeedDemo = makeFunctionReference<
   { inserted: number; updated: number }
 >("sources:seedDemo");
 
+export const sourcesUpsert = makeFunctionReference<
+  "mutation",
+  { sessionToken: string; slug: string; displayName: string; enabled: boolean; type: SourceType; config: unknown },
+  { id: string; created: boolean }
+>("sources:upsert");
+
 export const sourcesSetEnabled = makeFunctionReference<
   "action",
   { sessionToken: string; slug: string; enabled: boolean },
   { ok: boolean; slug: string; enabled: boolean }
 >("sourcesActions:setEnabled");
+
+export const scraperBuilderGetCurrent = makeFunctionReference<
+  "query",
+  { sessionToken: string },
+  ScraperBuilderJobDoc | null
+>("scraperBuilder:getCurrent");
+
+export const scraperBuilderUpsertCurrent = makeFunctionReference<
+  "mutation",
+  { sessionToken: string; draft: unknown; runId?: string },
+  { ok: boolean; created: boolean }
+>("scraperBuilder:upsertCurrent");
+
+export const scraperBuilderClearCurrent = makeFunctionReference<
+  "mutation",
+  { sessionToken: string },
+  { ok: boolean }
+>("scraperBuilder:clearCurrent");
+
+export const scraperBuilderStartDryRun = makeFunctionReference<
+  "action",
+  { sessionToken: string; draft: unknown },
+  { ok: boolean; runId: string; queueJobId: string | null }
+>("scraperBuilderActions:startDryRun");
 
 export const runsListRecent = makeFunctionReference<
   "query",

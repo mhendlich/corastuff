@@ -17,6 +17,7 @@ import { AmazonPricingPage } from "../pages/AmazonPricingPage";
 import { ScrapersPage } from "../pages/ScrapersPage";
 import { ScrapeHistoryPage } from "../pages/ScrapeHistoryPage";
 import { ScrapeRunDetailPage } from "../pages/ScrapeRunDetailPage";
+import { ScraperBuilderPage } from "../pages/ScraperBuilderPage";
 import { AppLayout } from "./AppLayout";
 import { NotFoundPage } from "./NotFoundPage";
 import { PlaceholderPage } from "./PlaceholderPage";
@@ -96,7 +97,7 @@ export function AuthenticatedApp(props: { sessionToken: string; onLoggedOut: () 
           <Route path="/scrapers/history/:runId" element={<ScrapeRunDetailPage sessionToken={props.sessionToken} />} />
           <Route path="/scrapers/schedules" element={<PlaceholderPage title="Automation" />} />
           <Route path="/history" element={<ScrapeHistoryPage sessionToken={props.sessionToken} />} />
-          <Route path="/scrapers/builder" element={<PlaceholderPage title="Scraper Builder" />} />
+          <Route path="/scrapers/builder" element={<ScraperBuilderPage sessionToken={props.sessionToken} />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

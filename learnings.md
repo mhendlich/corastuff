@@ -10,3 +10,4 @@
 - Amazon opportunity logic now lives in Convex (`amazon:pricingOpportunities`): it joins `canonicalProducts` + `productLinks` + `productsLatest` and classifies `undercut`/`raise`/`watch` plus missing-data buckets; the `/amazon-pricing` page consumes it directly.
 - Scraper monitoring UI now lives at `/scrapers` (overview) and `/scrapers/history` + `/scrapers/history/:runId` (run history + detail); `/history` is currently an alias to the same history page.
 - `runs:listRecent` now allows up to 200 rows, which keeps the history page usable without adding a dedicated filtered index yet.
+- Scraper Builder runs use queue payload `configOverride` + `dryRun` so the worker can test arbitrary configs without ingesting into `productsLatest`; these runs are created with `requestedBy: "builder"` so `runs:setStatus` intentionally does not update `sources.lastSuccessfulRunId/At`.

@@ -365,7 +365,7 @@ async function scrapeSource(args: {
   config: unknown;
   log: (msg: string) => void;
 }): Promise<ScrapeResult> {
-  const globetrotter = args.sourceSlug === "globetrotter" ? parseGlobetrotterBrandConfig(args.sourceSlug, args.config) : null;
+  const globetrotter = parseGlobetrotterBrandConfig(args.sourceSlug, args.config);
   if (globetrotter) {
     const { products } = await scrapeGlobetrotterBrandPage({
       sourceSlug: globetrotter.sourceSlug,
@@ -465,6 +465,8 @@ async function main() {
       const data = job.data as RunScraperJobData;
       const sourceSlug = typeof data?.sourceSlug === "string" ? data.sourceSlug.trim() : "";
       const requestedBy = typeof data?.requestedBy === "string" ? data.requestedBy : undefined;
+      const dryRun = data?.dryRun === true;
+      const configOverride = data?.configOverride;
       let runId = typeof data?.runId === "string" ? data.runId.trim() : "";
       const wasRunIdMissing = !runId;
       if (!sourceSlug) {
@@ -540,7 +542,10 @@ async function main() {
 
         let sourceConfig: unknown = null;
         let sourceEnabled: boolean | null = null;
-        if (convexForRun) {
+        const hasConfigOverride = configOverride !== undefined;
+        if (hasConfigOverride) {
+          sourceConfig = configOverride;
+        } else if (convexForRun) {
           try {
             const sourceDoc = await convexForRun.query(sourcesGetBySlug, {
               sessionToken: sessionToken!,
@@ -585,11 +590,13 @@ async function main() {
               queueJobId: job.id ?? null,
               attempt: job.attemptsMade,
               workerId,
-              receivedAt: Date.now()
+              receivedAt: Date.now(),
+              ...(dryRun ? { dryRun: true } : {}),
+              ...(hasConfigOverride ? { configOverride: true } : {})
             }
           });
 
-          if (sourceEnabled === false) {
+          if (!hasConfigOverride && sourceEnabled === false) {
             await convexForRun.mutation(runsSetStatus, { sessionToken: sessionToken!, runId, status: "canceled" });
             await log("warn", "Source disabled; skipping run", { sourceSlug, workerId });
             return { ok: true, status: "canceled" as const, runId, sourceSlug };
@@ -668,7 +675,10 @@ async function main() {
             await log("warn", "Skipped products missing itemId", { missingItemIds: missingItemIdsForRun });
           }
 
-          const ingestProducts = productsWithItemId.map((p) => ({
+          if (dryRun) {
+            await log("info", "Dry run enabled; skipping Convex ingest", { productsWithItemId: productsWithItemId.length });
+          } else {
+            const ingestProducts = productsWithItemId.map((p) => ({
               itemId: p.itemId!.trim(),
               name: p.name,
               url: p.url,
@@ -677,14 +687,15 @@ async function main() {
               image: p.image
             }));
 
-          const ingestResult = await convexForRun.mutation(productsIngestRun, {
-            sessionToken: sessionToken!,
-            runId,
-            sourceSlug,
-            scrapedAt: Number.isFinite(scrapedAt) ? scrapedAt : undefined,
-            products: ingestProducts
-          });
-          await log("info", "Ingested products into Convex", ingestResult);
+            const ingestResult = await convexForRun.mutation(productsIngestRun, {
+              sessionToken: sessionToken!,
+              runId,
+              sourceSlug,
+              scrapedAt: Number.isFinite(scrapedAt) ? scrapedAt : undefined,
+              products: ingestProducts
+            });
+            await log("info", "Ingested products into Convex", ingestResult);
+          }
         }
 
         const status: RunStatus = "completed";

@@ -122,6 +122,14 @@ export default defineSchema({
     runId: v.optional(v.id("runs"))
   }).index("by_source_item_ts", ["sourceSlug", "itemId", "ts"]),
 
+  scraperBuilderJobs: defineTable({
+    key: v.string(),
+    draft: v.optional(v.any()),
+    runId: v.optional(v.id("runs")),
+    createdAt: v.number(),
+    updatedAt: v.number()
+  }).index("by_key", ["key"]),
+
   canonicalProducts: defineTable({
     name: v.string(),
     description: v.optional(v.string()),

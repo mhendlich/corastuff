@@ -196,6 +196,9 @@ export const setStatus = mutationGeneric({
     if (args.status === "completed") {
       const run = await ctx.db.get(args.runId);
       if (run) {
+        if (run.requestedBy === "builder") {
+          return { ok: true };
+        }
         const source = await ctx.db
           .query("sources")
           .withIndex("by_slug", (q) => q.eq("slug", run.sourceSlug))

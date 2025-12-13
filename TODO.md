@@ -154,10 +154,12 @@ Old reference: `src/webapp/templates/scrapers/*`, `src/webapp/routes.py` scraper
   - [x] Status badges, started/completed/duration, products found, full error message.
   - [x] Artifact links (products.json, run.log, screenshots, html, etc if present).
   - [x] Link to “all runs for this scraper”.
-- [ ] “Add scraper” builder parity
-  - [ ] Rebuild/replace Codex-powered scraper builder flow (old: `/scrapers/builder`, `/api/scraper-builder/*`).
-  - [ ] Streaming logs + cancel + persistence across refresh.
-  - [ ] Define what “adding a scraper” means in the TS world (generate TS scraper package code? create a new source config? both?).
+- [x] “Add scraper” builder parity
+  - [x] Rebuild/replace Codex-powered scraper builder flow (old: `/scrapers/builder`, `/api/scraper-builder/*`).
+  - [x] Streaming logs + cancel + persistence across refresh.
+  - [x] Define what “adding a scraper” means in the TS world: save a `sources` config + validate via worker dry-run (no ingest).
+  - [ ] (Nice-to-have) Expand auto-detection/templates (locale prefixes, non-Globetrotter Playwright recipes, etc).
+  - [ ] (Nice-to-have) Allow multiple saved builder drafts per user (instead of singleton `current`).
 
 ## 8) Automation / schedules parity (`/scrapers/schedules`)
 
@@ -177,8 +179,8 @@ Old reference: `src/webapp/templates/scrapers/schedules.html`, `src/webapp/route
 
 Old scrapers are code-defined; new stack is config-driven (`sources.config`).
 
-- [ ] UI to create/edit sources (slug, displayName, type, config JSON with validation).
-- [ ] Validation + “test scrape” action that runs a dry-run and reports errors before enabling schedules.
+- [ ] UI to create/edit sources (slug, displayName, type, config JSON with validation) (builder currently supports a basic “save source”).
+- [ ] Validation + “test scrape” action that runs a dry-run and reports errors before enabling schedules (builder dry-run exists, needs generalization).
 
 ## 10) Scraper coverage parity (port Python scrapers → TS or decide hybrid)
 

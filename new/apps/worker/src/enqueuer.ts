@@ -38,6 +38,8 @@ const server = http.createServer(async (req, res) => {
       const payload = await readJson(req);
       const runId = (payload as { runId?: unknown }).runId;
       const sourceSlug = (payload as { sourceSlug?: unknown }).sourceSlug;
+      const dryRun = (payload as { dryRun?: unknown }).dryRun;
+      const configOverride = (payload as { configOverride?: unknown }).configOverride;
       if (
         (runId !== undefined && (typeof runId !== "string" || !runId.trim())) ||
         typeof sourceSlug !== "string" ||
@@ -45,13 +47,15 @@ const server = http.createServer(async (req, res) => {
       ) {
         return sendJson(res, 400, {
           ok: false,
-          error: "Expected JSON { sourceSlug: string, runId?: string }"
+          error: "Expected JSON { sourceSlug: string, runId?: string, dryRun?: boolean, configOverride?: unknown }"
         });
       }
 
       const { queueJobId } = await enqueueRunScraperJob(redisUrl, {
         sourceSlug: sourceSlug.trim(),
-        ...(typeof runId === "string" && runId.trim() ? { runId: runId.trim() } : {})
+        ...(typeof runId === "string" && runId.trim() ? { runId: runId.trim() } : {}),
+        ...(dryRun === true ? { dryRun: true } : {}),
+        ...(configOverride !== undefined ? { configOverride } : {})
       });
 
       return sendJson(res, 200, { ok: true, queueJobId });

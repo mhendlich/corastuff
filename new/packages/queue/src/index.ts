@@ -8,6 +8,15 @@ export type RunScraperJobData = {
   sourceSlug: string;
   runId?: string;
   requestedBy?: string;
+  /**
+   * Optional override for `sources.config` so we can run ad-hoc/dry runs
+   * (used by the Scraper Builder flow).
+   */
+  configOverride?: unknown;
+  /**
+   * When true, scrape artifacts are produced but products are not ingested into Convex.
+   */
+  dryRun?: boolean;
 };
 
 export function createRedisConnection(redisUrl: string) {
