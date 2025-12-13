@@ -1,0 +1,224 @@
+# TODO (Feature + UI/UX parity)
+
+Goal: reach feature + UI/UX parity with the “old” FastAPI/Jinja/HTMX webapp in `src/webapp` using the “new” stack in `new/` (React/Vite/Tailwind + Convex + BullMQ worker + Caddy proxy/media).
+
+This list is based on a code-diff of:
+- Old UI/routes: `src/webapp/routes.py` + templates in `src/webapp/templates/`
+- Old data/logic: `src/db.py`, `src/job_queue.py`, `src/scheduler.py`, `src/worker.py`, `src/scrapers/*`
+- New UI: `new/apps/web/src/App.tsx`
+- New backend/data: `new/convex/*`, `new/apps/worker/src/*`, `new/packages/*`, `new/docker-compose.yml`
+
+## 0) Parity blockers (foundation)
+
+- [x] Add authentication + session handling (old: `/login`, `/logout`, cookie `session_token` in `src/webapp/auth.py`)
+  - [x] Gate all UI routes and all Convex-driven data access behind auth (not just “hide UI”).
+  - [x] Decide where auth lives (SPA login + per-function `sessionToken` arg; password via Convex env `CORASTUFF_PASSWORD`).
+  - [x] Add logout + session invalidation; add “already logged in” behavior (persisted session token).
+- [x] Add proper app shell + routing (old: sidebar + topbar in `src/webapp/templates/base.html`)
+  - [x] SPA routes matching old pages (Dashboard, Insights, Products, Link Products, Prices, Amazon Pricing, Scrapers, Automation/Schedules, History, Scraper Builder).
+  - [x] Shared layout: sidebar nav, page titles/subtitles, breadcrumbs, page actions (logout).
+  - [x] Split current `DashboardPage` into real per-route pages (so `/link` is its own page, not the dashboard).
+- [x] Make “latest scrape” semantics match old behavior (old queries always target the latest `scraped_at` per source)
+  - [x] Track latest successful run per source via `sources.lastSuccessfulRunId`, updated on run completion (`runs:setStatus`).
+  - [x] Track which run last saw each product via `productsLatest.lastSeenRunId` (set in `products:ingestRun`) and filter list/unlinked/counts by that run.
+  - [x] (Optional) One-off backfill for existing DBs so pre-change `productsLatest` rows get `lastSeenRunId` (otherwise semantics update after the next run per source). Implemented as `adminActions:backfillProductsLatestLastSeenRunId`.
+- [x] Prevent duplicate/overlapping runs per source (old: `JobQueue.is_scraper_queued_or_running`)
+  - [x] Add an action guard in `new/convex/runsActions.ts` to refuse a new run if there is already a `pending`/`running` run for that `sourceSlug`.
+  - [x] Reflect this in UI (disable “Run”, show “Queued/Running” state per source).
+  - [x] Break up the giant App.tsx into a proper structure
+  - [x] Ensure a default login password exists for local dev, still overridden by `CORASTUFF_PASSWORD` (currently `dev` via `new/.env.example` and `new/docker-compose.yml`).
+
+## 1) Dashboard parity (`/`)
+
+Old reference: `src/webapp/templates/dashboard.html`, `src/webapp/templates/partials/_stats.html`, `src/db.py:get_stats`, `src/db.py:get_last_scrape_times`.
+
+- [x] Implement dashboard KPIs: canonical count, linked count, unlinked count, sources count.
+  - Backed by `new/convex/dashboard.ts` (`dashboard:stats`).
+- [x] Implement “Data Sources” list with last-scraped timestamp + relative “ago” display.
+  - Backed by `new/convex/dashboard.ts` (`dashboard:lastScrapes`).
+- [x] Ensure “Danger zone / Reset all” matches old UX (double-confirm + inline result panel).
+
+## 2) Insights parity (`/insights`)
+
+Old reference: `src/webapp/templates/insights.html`, `src/db.py:get_insights_snapshot`.
+
+- [ ] Port “Insights” computation into Convex (or a worker-produced snapshot):
+  - [x] Persist per-product previous price + delta fields during ingest (supports movers + prices landing).
+  - [x] Summary tiles: recent drops, recent spikes, stale sources, recent failures.
+  - [ ] Summary tiles: new extremes, outliers.
+  - [x] “Last-run movers” sections (drops/spikes) (deep links TBD until `/prices/*` exists).
+  - [ ] New lows / new highs lists.
+  - [ ] “Streak trends” (sustained drops/rises).
+  - [ ] Cross-source outliers vs canonical median (requires canonical link graph + latest prices).
+  - [ ] Coverage snapshots: source coverage + canonical coverage gaps (old: `get_source_coverage_snapshot`, `get_canonical_coverage_gaps`).
+  - [x] Scrape health signals: stale sources (by last scrape time) + recent failures window.
+- [ ] Build the Insights UI with the same information architecture and drilldowns as old.
+  - [x] Add the `/insights` route + nav + MVP page (tiles + movers + scrape health).
+  - [ ] Add remaining sections + drilldowns (extremes, outliers, streak trends, coverage).
+
+## 3) Canonical Products parity (`/products/*`)
+
+Old reference: `src/webapp/templates/products/*`, routes in `src/webapp/routes.py`, DB ops in `src/db.py` (canonical CRUD + links).
+
+- [ ] Canonical products list page
+  - [ ] Search (name + description).
+  - [ ] Link-count badge + linked-source chips preview.
+  - [ ] “New Product” CTA.
+- [ ] Canonical create/edit form (name + optional description).
+- [ ] Canonical detail page
+  - [ ] Table of linked source products with: source, name, price, currency, item id, outbound URL.
+  - [ ] Highlight best price among linked sources.
+  - [ ] Unlink action per row with redirect back to canonical detail.
+- [ ] Canonical delete flow with confirmation (deletes links too).
+
+## 4) Link Products workbench parity (`/link`)
+
+Old reference: `src/webapp/templates/link/workbench.html`, `src/webapp/templates/link/_unlinked_list.html`, routes in `src/webapp/routes.py`, DB ops in `src/db.py` (unlinked queries, canonical search, suggestions, bulk link).
+
+- [ ] Multi-source linking workbench
+  - [ ] Left rail: source list with counts, filter box, “All/None”, “Show sources with 0 unlinked”.
+  - [ ] Show “missing IDs” warning/count per source (old: `unlinked_missing_id`).
+  - [ ] “Refresh counts” behavior.
+- [ ] Unlinked queue behavior (center column)
+  - [ ] Search by product name/SKU, scoped to selected sources.
+  - [ ] Pagination + “Load more” with offset/limit (old: `get_unlinked_products_page`).
+  - [ ] Row selection + keyboard/auto-advance UX (old: “Auto-advance to next item”).
+  - [ ] Bulk selection UI (“N selected”) + bulk-link to a canonical.
+- [ ] Linking panel behavior (right column)
+  - [ ] Canonical search/autocomplete (old: `/link/api/canonicals`).
+  - [ ] Suggested canonicals for the selected unlinked product (old: `/link/api/product-suggestions`).
+  - [ ] “Keep selected canonical for next item”.
+  - [ ] Create new canonical + link (pre-filled with selected product name).
+  - [ ] Unlink action + proper redirects.
+- [ ] Smart suggestions section (bottom “Review and apply bulk links”)
+  - [ ] Port fuzzy/ML-ish suggestions (old: `src/db.py:get_link_suggestions`).
+  - [ ] UI: rescan, dismiss suggestion, apply suggested links (bulk), show reasons + scores, show preview images.
+- [ ] API parity for linking actions
+  - [ ] JSON endpoints: link existing, create+link, bulk-link multiple items (old: `/link/api/link`, `/link/api/link-new`, `/link/api/bulk-link`).
+  - [ ] Efficient “get unlinked by keys” query (old: `get_unlinked_products_by_keys`) to support bulk actions.
+
+## 5) Prices parity (`/prices/*`)
+
+Old reference: `src/webapp/templates/prices/*`, `src/db.py:get_latest_products_with_price_change`, `src/db.py:get_product_price_history`, `src/webapp/routes.py` price routes + JSON endpoints for charts.
+
+- [ ] Prices landing page
+  - [ ] Table view grouped by source + cards view toggle.
+  - [ ] Search by product name.
+  - [ ] Filter by source + price ranges.
+  - [ ] Show latest price + price-change absolute + percentage vs previous run (requires “previous scrape” computation).
+  - [ ] Show product image thumbnails (served as stable URLs).
+  - [ ] Canonical section at top: “View Prices” per canonical.
+- [ ] Per-product price history page
+  - [ ] Current price card, source chip, outbound URL.
+  - [ ] Chart with adaptive time unit (old: Chart.js + date adapter).
+  - [ ] History table with deltas vs previous point.
+  - [ ] “Linked to canonical” banner + link.
+- [ ] Canonical price comparison page
+  - [ ] “Current prices” grid across linked sources with best-price highlight.
+  - [ ] Multi-series comparison chart.
+  - [ ] Per-source history tables + “View full history” links.
+- [ ] Expose JSON/series endpoints needed for charting (or implement charting directly from Convex queries).
+
+## 6) Amazon Pricing parity (`/amazon-pricing`)
+
+Old reference: `src/webapp/templates/amazon/index.html`, `src/db.py:get_amazon_pricing_items`, `src/db.py:add_manual_amazon_product`.
+
+- [ ] Add data model support for Amazon listings (as sources like `amazon`/`amazon_de` in old) and/or manual ingestion.
+- [ ] Compute Amazon vs retailer opportunities per canonical:
+  - [ ] Classify into: undercut, raise, watch, missing competitors, missing own price (and “missing Amazon” if desired).
+  - [ ] KPI summary: counts + total overprice + potential gain.
+  - [ ] Tables for each action with: canonical, Amazon price/link, cheapest retailer, gap, suggested price.
+- [ ] Build the Amazon Pricing UI to match the old page structure and actions.
+
+## 7) Scrapers parity (`/scrapers/*`)
+
+Old reference: `src/webapp/templates/scrapers/*`, `src/webapp/routes.py` scraper routes, `src/cli.py` + `src/worker.py` + `src/job_queue.py`, schedules in `src/scheduler.py`.
+
+- [ ] Scrapers overview page
+  - [ ] Status counts (running/queued/failed/completed/idle).
+  - [ ] Table of scrapers/sources with: status, last activity, products count, actions.
+  - [ ] Search + status filter chips.
+  - [x] “Run all” action (skip already queued/running). Implemented as `runsActions:requestAll` and exposed in the current minimal Sources UI (until the scrapers page exists).
+  - [ ] Row auto-refresh while active (Convex subscriptions should replace HTMX polling).
+- [ ] Scrape run history page
+  - [ ] KPI stats (total, successful, failed, running, success rate) + “recent failures” callout.
+  - [ ] Filters by scraper + status + limit.
+  - [ ] Table columns: started, duration, products found, error (truncate + link).
+- [ ] Scrape run detail page
+  - [ ] Status badges, started/completed/duration, products found, full error message.
+  - [ ] Artifact links (products.json, run.log, screenshots, html, etc if present).
+  - [ ] Link to “all runs for this scraper”.
+- [ ] “Add scraper” builder parity
+  - [ ] Rebuild/replace Codex-powered scraper builder flow (old: `/scrapers/builder`, `/api/scraper-builder/*`).
+  - [ ] Streaming logs + cancel + persistence across refresh.
+  - [ ] Define what “adding a scraper” means in the TS world (generate TS scraper package code? create a new source config? both?).
+
+## 8) Automation / schedules parity (`/scrapers/schedules`)
+
+Old reference: `src/webapp/templates/scrapers/schedules.html`, `src/webapp/routes.py` scheduler endpoints, `src/db.py` schedules + concurrency settings.
+
+- [ ] Schedules UI parity
+  - [ ] Global scheduler status panel (running/paused) and controls (start/stop), or a new equivalent if BullMQ scheduling is always-on.
+  - [ ] Bulk enable/disable schedules.
+  - [ ] Bulk set interval minutes.
+  - [ ] Sticky “unsaved changes” save bar (if keeping “save-all” UX) or an explicit “saved” indicator per row.
+  - [ ] Per-source schedule row: enabled toggle, interval, last run, next run.
+- [ ] Concurrency limit parity
+  - [ ] Persist “max concurrent scrapers” setting (old: `ProductDatabase.get_scraper_concurrency_limit`).
+  - [ ] Apply it to BullMQ worker concurrency (or implement a limiter in the enqueuer/scheduler).
+
+## 9) Source configuration management (new-only requirement for parity)
+
+Old scrapers are code-defined; new stack is config-driven (`sources.config`).
+
+- [ ] UI to create/edit sources (slug, displayName, type, config JSON with validation).
+- [ ] Validation + “test scrape” action that runs a dry-run and reports errors before enabling schedules.
+
+## 10) Scraper coverage parity (port Python scrapers → TS or decide hybrid)
+
+Old sources exist as Python scrapers in `src/scrapers/*.py`. New TS scrapers currently cover only:
+- Shopify collection JSON (`new/packages/scrapers/src/shopifyCollection.ts`)
+- Shopify vendor listing (`new/packages/scrapers/src/shopifyVendorListing.ts`)
+- Globetrotter brand listing (`new/packages/scrapers/src/globetrotterBrand.ts`)
+
+Remaining old scrapers to cover (parity target):
+- [ ] `amazon` (plus any Amazon DE variant used)
+- [ ] `artzt`
+- [ ] `bergzeit`
+- [ ] `bike24`
+- [ ] `bodyguard_shop`
+- [ ] `bunert`
+- [ ] `cardiofitness` (already partially covered via Shopify JSON, but validate parity)
+- [ ] `decathlon_ch`
+- [ ] `dein_vital_shop` (already partially covered via Shopify JSON, but validate parity)
+- [ ] `digitec` (Playwright + stealth/UA considerations)
+- [ ] `fitshop`
+- [ ] `galaxus` (Playwright + stealth/UA considerations)
+- [ ] `intersport`
+- [ ] `kaufland`
+- [ ] `keller_sports`
+- [ ] `kuebler_sport`
+- [ ] `manor`
+- [ ] `medidor` (already partially covered via Shopify vendor listing, but validate parity)
+- [ ] `migros`
+- [ ] `oezpinar`
+- [ ] `otto`
+- [ ] `sanicare`
+- [ ] `seeger24`
+- [ ] `sport2000`
+- [ ] `sport_bittl`
+- [ ] `sport_conrad`
+- [ ] `sportscheck`
+- [ ] `tennis_point`
+- [ ] `transa`
+- [ ] `upswing`
+
+Cross-cutting scraper parity tasks:
+- [ ] Bring over per-site “browser context” knobs (UA/locale/viewport/stealth init) for protected storefronts (see repo notes in `AGENTS.md`).
+- [ ] Standardize product output: stable `itemId`, `name`, `price`, `currency`, `url`, `imageUrl` (and ensure currency inference matches old behavior).
+- [ ] Ensure image fetching works on bot-protected sites (headers mimicking `<img>` request).
+- [ ] Add “products missing stable ID” detection and surface it in linking UI (old: `unlinked_missing_id` warnings).
+
+## 12) Operational parity / polish
+
+- [ ] Improve error UX: toasts, inline errors, retry buttons, empty states (match old UX quality).
