@@ -59,7 +59,7 @@ Old reference: `src/webapp/templates/insights.html`, `src/db.py:get_insights_sna
   - [ ] Add drilldowns for streak/coverage items.
     - [x] Canonical coverage gaps link to canonical detail (`/products/:canonicalId`).
     - [x] Deep-link movers/extremes/streaks/outliers + source unlinked counts into `/link`.
-    - [ ] Price-history drilldowns (blocked on `/prices/*` parity).
+    - [x] Price-history drilldowns (movers/extremes/outliers/streaks → `/prices/product/...`).
 
 ## 3) Canonical Products parity (`/products/*`)
 
@@ -106,23 +106,23 @@ Old reference: `src/webapp/templates/link/workbench.html`, `src/webapp/templates
 
 Old reference: `src/webapp/templates/prices/*`, `src/db.py:get_latest_products_with_price_change`, `src/db.py:get_product_price_history`, `src/webapp/routes.py` price routes + JSON endpoints for charts.
 
-- [ ] Prices landing page
-  - [ ] Table view grouped by source + cards view toggle.
-  - [ ] Search by product name.
-  - [ ] Filter by source + price ranges.
-  - [ ] Show latest price + price-change absolute + percentage vs previous run (requires “previous scrape” computation).
-  - [ ] Show product image thumbnails (served as stable URLs).
-  - [ ] Canonical section at top: “View Prices” per canonical.
-- [ ] Per-product price history page
-  - [ ] Current price card, source chip, outbound URL.
-  - [ ] Chart with adaptive time unit (old: Chart.js + date adapter).
-  - [ ] History table with deltas vs previous point.
-  - [ ] “Linked to canonical” banner + link.
-- [ ] Canonical price comparison page
-  - [ ] “Current prices” grid across linked sources with best-price highlight.
-  - [ ] Multi-series comparison chart.
-  - [ ] Per-source history tables + “View full history” links.
-- [ ] Expose JSON/series endpoints needed for charting (or implement charting directly from Convex queries).
+- [x] Prices landing page
+  - [x] Table view grouped by source + cards view toggle.
+  - [x] Search by product name.
+  - [x] Filter by source + price ranges.
+  - [x] Show latest price + price-change absolute + percentage vs previous run (requires “previous scrape” computation).
+  - [x] Show product image thumbnails (served as stable URLs).
+  - [x] Canonical section at top: “View Prices” per canonical.
+- [x] Per-product price history page
+  - [x] Current price card, source chip, outbound URL.
+  - [x] Chart with adaptive time unit (old: Chart.js + date adapter).
+  - [x] History table with deltas vs previous point.
+  - [x] “Linked to canonical” banner + link.
+- [x] Canonical price comparison page
+  - [x] “Current prices” grid across linked sources with best-price highlight.
+  - [x] Multi-series comparison chart.
+  - [x] Per-source history tables + “View full history” links.
+- [x] Expose JSON/series endpoints needed for charting (implemented via Convex queries).
 
 ## 6) Amazon Pricing parity (`/amazon-pricing`)
 

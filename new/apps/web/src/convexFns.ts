@@ -110,6 +110,29 @@ export type PricePointDoc = {
   runId?: string | undefined;
 };
 
+export type PricesOverview = {
+  generatedAt: number;
+  sources: Array<{
+    sourceSlug: string;
+    displayName: string;
+    enabled: boolean;
+    lastSuccessfulAt: number | null;
+    products: Array<{
+      sourceSlug: string;
+      itemId: string;
+      name: string;
+      url: string | null;
+      lastPrice: number;
+      currency: string | null;
+      prevPrice: number | null;
+      priceChange: number | null;
+      priceChangePct: number | null;
+      lastSeenAt: number;
+      image: StoredImage | null;
+    }>;
+  }>;
+};
+
 export type CanonicalDoc = {
   _id: string;
   _creationTime: number;
@@ -154,6 +177,30 @@ export type ProductLinkDoc = {
 export type LinkForProduct = {
   link: ProductLinkDoc;
   canonical: CanonicalDoc | null;
+} | null;
+
+export type PricesProductDetail = {
+  source: { slug: string; displayName: string };
+  product: ProductLatestDoc;
+  history: PricePointDoc[];
+  link: ProductLinkDoc | null;
+  canonical: CanonicalDoc | null;
+} | null;
+
+export type PricesCanonicalComparison = {
+  canonical: CanonicalDoc;
+  bestKey: string | null;
+  items: Array<{
+    sourceSlug: string;
+    sourceDisplayName: string;
+    itemId: string;
+    name: string | null;
+    url: string | null;
+    currency: string | null;
+    currentPrice: number | null;
+    image: StoredImage | null;
+    history: PricePointDoc[];
+  }>;
 } | null;
 
 export type LinkCountsBySource = {
@@ -445,11 +492,36 @@ export const schedulesUpsert = makeFunctionReference<
   { id: string; created: boolean; nextRunAt: number | null }
 >("schedulesActions:upsert");
 
+export const pricesOverview = makeFunctionReference<
+  "query",
+  {
+    sessionToken: string;
+    sourceSlug?: string;
+    q?: string;
+    minPrice?: number;
+    maxPrice?: number;
+    limitPerSource?: number;
+  },
+  PricesOverview
+>("prices:overview");
+
 export const pricesListForProduct = makeFunctionReference<
   "query",
   { sessionToken: string; sourceSlug: string; itemId: string; limit?: number },
   PricePointDoc[]
 >("prices:listForProduct");
+
+export const pricesProductDetail = makeFunctionReference<
+  "query",
+  { sessionToken: string; sourceSlug: string; itemId: string; limit?: number },
+  PricesProductDetail
+>("prices:productDetail");
+
+export const pricesCanonicalComparison = makeFunctionReference<
+  "query",
+  { sessionToken: string; canonicalId: string; limitPerProduct?: number },
+  PricesCanonicalComparison
+>("prices:canonicalComparison");
 
 export const canonicalsList = makeFunctionReference<
   "query",

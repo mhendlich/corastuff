@@ -5,7 +5,7 @@ import { fmtAgo } from "../../../lib/time";
 import text from "../../../ui/text.module.css";
 import type { InsightsOutlier } from "../../../convexFns";
 import { fmtMoney, fmtSignedPct } from "../lib/format";
-import { linkWorkbenchHref } from "../../../lib/routes";
+import { linkWorkbenchHref, pricesProductHref } from "../../../lib/routes";
 
 export function OutlierRow(props: { outlier: InsightsOutlier }) {
   const o = props.outlier;
@@ -18,13 +18,21 @@ export function OutlierRow(props: { outlier: InsightsOutlier }) {
         <Stack gap={6} style={{ minWidth: 0 }}>
           <Anchor
             component={Link}
-            to={linkWorkbenchHref({ sourceSlug: o.sourceSlug, itemId: o.itemId })}
+            to={pricesProductHref({ sourceSlug: o.sourceSlug, itemId: o.itemId })}
             fw={600}
             size="sm"
             lineClamp={1}
-            title="Open in Link Products"
+            title="View price history"
           >
             {o.name}
+          </Anchor>
+          <Anchor
+            component={Link}
+            to={linkWorkbenchHref({ sourceSlug: o.sourceSlug, itemId: o.itemId })}
+            size="xs"
+            c="dimmed"
+          >
+            Open in Link Products
           </Anchor>
           <Group gap={8} wrap="wrap">
             <Badge variant="light" color={color} radius="xl">

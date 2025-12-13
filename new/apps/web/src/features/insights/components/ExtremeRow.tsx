@@ -5,7 +5,7 @@ import { fmtAgo } from "../../../lib/time";
 import text from "../../../ui/text.module.css";
 import type { InsightsExtreme } from "../../../convexFns";
 import { fmtMoney, fmtSignedPct } from "../lib/format";
-import { linkWorkbenchHref } from "../../../lib/routes";
+import { linkWorkbenchHref, pricesProductHref } from "../../../lib/routes";
 
 export function ExtremeRow(props: { kind: "low" | "high"; item: InsightsExtreme }) {
   const e = props.item;
@@ -19,13 +19,21 @@ export function ExtremeRow(props: { kind: "low" | "high"; item: InsightsExtreme 
         <Stack gap={6} style={{ minWidth: 0 }}>
           <Anchor
             component={Link}
-            to={linkWorkbenchHref({ sourceSlug: e.sourceSlug, itemId: e.itemId })}
+            to={pricesProductHref({ sourceSlug: e.sourceSlug, itemId: e.itemId })}
             fw={600}
             size="sm"
             lineClamp={1}
-            title="Open in Link Products"
+            title="View price history"
           >
             {e.name}
+          </Anchor>
+          <Anchor
+            component={Link}
+            to={linkWorkbenchHref({ sourceSlug: e.sourceSlug, itemId: e.itemId })}
+            size="xs"
+            c="dimmed"
+          >
+            Open in Link Products
           </Anchor>
           <Group gap={8} wrap="wrap">
             <Badge variant="light" color={color} radius="xl">

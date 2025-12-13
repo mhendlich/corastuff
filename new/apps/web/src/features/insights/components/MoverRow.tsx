@@ -5,7 +5,7 @@ import text from "../../../ui/text.module.css";
 import { fmtAgo } from "../../../lib/time";
 import type { InsightsMover } from "../../../convexFns";
 import { fmtMoney, fmtSignedNumber, fmtSignedPct } from "../lib/format";
-import { linkWorkbenchHref } from "../../../lib/routes";
+import { linkWorkbenchHref, pricesProductHref } from "../../../lib/routes";
 
 function fmtDelta(m: InsightsMover) {
   if (typeof m.changeAbs !== "number" && typeof m.changePct !== "number") return "—";
@@ -25,13 +25,21 @@ export function MoverRow(props: { kind: "drop" | "spike"; mover: InsightsMover }
         <Stack gap={6} style={{ minWidth: 0 }}>
           <Anchor
             component={Link}
-            to={linkWorkbenchHref({ sourceSlug: m.sourceSlug, itemId: m.itemId })}
+            to={pricesProductHref({ sourceSlug: m.sourceSlug, itemId: m.itemId })}
             fw={600}
             size="sm"
             lineClamp={1}
-            title="Open in Link Products"
+            title="View price history"
           >
             {m.name}
+          </Anchor>
+          <Anchor
+            component={Link}
+            to={linkWorkbenchHref({ sourceSlug: m.sourceSlug, itemId: m.itemId })}
+            size="xs"
+            c="dimmed"
+          >
+            Open in Link Products
           </Anchor>
           <Group gap={8} wrap="wrap">
             <Badge variant="light" color={color} radius="xl">

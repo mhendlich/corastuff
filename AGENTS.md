@@ -22,3 +22,6 @@
 ## General rules
 - When implementing UI in the new frontend, use Mantine with CSS Modules. Build reusable components and use them throughout the app.
 - When working on the new project and youre finished, restart the services so i can always see the newest version in the browser.
+- Feel free to add libraries where it makes sense and makes ux better. This is an internal app so bundle size is not a concern.
+- Make use of all Mantine packages and install mroe of them if it makes sense.
+- When reimplementing features/views of the old python webapp, dont just reimplement them in the exact same way. Try to improve the ux and make it more modern and user friendly, also feel free to extend the features and add new ones if it makes sense.

@@ -5,7 +5,7 @@ import { fmtAgo } from "../../../lib/time";
 import text from "../../../ui/text.module.css";
 import type { InsightsStreakTrend } from "../../../convexFns";
 import { fmtMoney, fmtSignedPct } from "../lib/format";
-import { linkWorkbenchHref } from "../../../lib/routes";
+import { linkWorkbenchHref, pricesProductHref } from "../../../lib/routes";
 
 export function StreakRow(props: { kind: "drop" | "rise"; item: InsightsStreakTrend }) {
   const color = props.kind === "drop" ? "teal" : "yellow";
@@ -16,23 +16,16 @@ export function StreakRow(props: { kind: "drop" | "rise"; item: InsightsStreakTr
     <Panel variant="subtle" p="md">
       <Group justify="space-between" align="flex-start" wrap="nowrap" gap="md">
         <Stack gap={6} style={{ minWidth: 0 }}>
-          {props.item.url ? (
-            <Anchor
-              href={props.item.url}
-              target="_blank"
-              rel="noreferrer"
-              fw={600}
-              size="sm"
-              lineClamp={1}
-              title={props.item.name}
-            >
-              {props.item.name}
-            </Anchor>
-          ) : (
-            <Text fw={600} size="sm" lineClamp={1} title={props.item.name}>
-              {props.item.name}
-            </Text>
-          )}
+          <Anchor
+            component={Link}
+            to={pricesProductHref({ sourceSlug: props.item.sourceSlug, itemId: props.item.itemId })}
+            fw={600}
+            size="sm"
+            lineClamp={1}
+            title="View price history"
+          >
+            {props.item.name}
+          </Anchor>
           <Anchor
             component={Link}
             to={linkWorkbenchHref({ sourceSlug: props.item.sourceSlug, itemId: props.item.itemId })}
@@ -41,6 +34,11 @@ export function StreakRow(props: { kind: "drop" | "rise"; item: InsightsStreakTr
           >
             Open in Link Products
           </Anchor>
+          {props.item.url ? (
+            <Anchor href={props.item.url} target="_blank" rel="noreferrer" size="xs" c="dimmed">
+              Open store
+            </Anchor>
+          ) : null}
           <Group gap={8} wrap="wrap">
             <Badge variant="light" color={color} radius="xl">
               {props.item.sourceDisplayName}

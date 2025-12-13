@@ -17,7 +17,7 @@ export const NAV_ITEMS: Array<{ to: string; label: string; icon: TablerIcon; dis
   { to: "/insights", label: "Insights", icon: IconSparkles },
   { to: "/products", label: "Products", icon: IconDatabase },
   { to: "/link", label: "Link Products", icon: IconLink },
-  { to: "/prices", label: "Prices", icon: IconTimelineEvent, disabled: true },
+  { to: "/prices", label: "Prices", icon: IconTimelineEvent },
   { to: "/amazon-pricing", label: "Amazon Pricing", icon: IconRoute, disabled: true },
   { to: "/scrapers", label: "Scrapers", icon: IconRobot, disabled: true },
   { to: "/scrapers/schedules", label: "Automation", icon: IconTools, disabled: true },
