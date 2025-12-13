@@ -9,7 +9,8 @@ import {
   IconSparkles,
   IconTimelineEvent,
   IconWand,
-  IconTools
+  IconTools,
+  IconSettings
 } from "@tabler/icons-react";
 
 export const NAV_ITEMS: Array<{ to: string; label: string; icon: TablerIcon; disabled?: boolean }> = [
@@ -20,7 +21,8 @@ export const NAV_ITEMS: Array<{ to: string; label: string; icon: TablerIcon; dis
   { to: "/prices", label: "Prices", icon: IconTimelineEvent },
   { to: "/amazon-pricing", label: "Amazon Pricing", icon: IconRoute },
   { to: "/scrapers", label: "Scrapers", icon: IconRobot },
-  { to: "/scrapers/schedules", label: "Automation", icon: IconTools, disabled: true },
+  { to: "/scrapers/sources", label: "Sources", icon: IconSettings },
+  { to: "/scrapers/schedules", label: "Automation", icon: IconTools },
   { to: "/history", label: "History", icon: IconHistory },
   { to: "/builder", label: "Scraper Builder", icon: IconWand }
 ];

@@ -100,6 +100,10 @@ export type ScheduleDoc = {
   updatedAt: number;
 };
 
+export type AutomationStatus = {
+  paused: boolean;
+};
+
 export type PricePointDoc = {
   _id: string;
   _creationTime: number;
@@ -544,6 +548,11 @@ export const authLogout = makeFunctionReference<
 >("auth:logout");
 
 export const sourcesList = makeFunctionReference<"query", { sessionToken: string }, SourceDoc[]>("sources:list");
+export const sourcesGetBySlug = makeFunctionReference<
+  "query",
+  { sessionToken: string; slug: string },
+  SourceDoc | null
+>("sources:getBySlug");
 export const sourcesSeedDemo = makeFunctionReference<
   "mutation",
   { sessionToken: string },
@@ -561,6 +570,12 @@ export const sourcesSetEnabled = makeFunctionReference<
   { sessionToken: string; slug: string; enabled: boolean },
   { ok: boolean; slug: string; enabled: boolean }
 >("sourcesActions:setEnabled");
+
+export const sourcesStartDryRun = makeFunctionReference<
+  "action",
+  { sessionToken: string; sourceSlug: string; configOverride?: unknown },
+  { ok: boolean; runId: string; queueJobId: string | null }
+>("sourcesActions:startDryRun");
 
 export const scraperBuilderGetCurrent = makeFunctionReference<
   "query",
@@ -691,6 +706,36 @@ export const schedulesUpsert = makeFunctionReference<
   { sessionToken: string; sourceSlug: string; enabled: boolean; intervalMinutes: number },
   { id: string; created: boolean; nextRunAt: number | null }
 >("schedulesActions:upsert");
+
+export const automationStatus = makeFunctionReference<
+  "action",
+  { sessionToken: string },
+  AutomationStatus
+>("automationActions:status");
+
+export const automationPause = makeFunctionReference<
+  "action",
+  { sessionToken: string },
+  AutomationStatus
+>("automationActions:pause");
+
+export const automationResume = makeFunctionReference<
+  "action",
+  { sessionToken: string },
+  AutomationStatus
+>("automationActions:resume");
+
+export const settingsGetScraperConcurrencyLimit = makeFunctionReference<
+  "query",
+  { sessionToken: string },
+  number
+>("settings:getScraperConcurrencyLimit");
+
+export const settingsSetScraperConcurrencyLimit = makeFunctionReference<
+  "mutation",
+  { sessionToken: string; limit: number },
+  { ok: boolean; limit: number; created: boolean }
+>("settings:setScraperConcurrencyLimit");
 
 export const pricesOverview = makeFunctionReference<
   "query",

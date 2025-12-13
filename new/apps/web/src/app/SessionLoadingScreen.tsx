@@ -1,6 +1,7 @@
 import { Badge, Box, Container, Group, Loader, Paper, Stack, Text, Title } from "@mantine/core";
 import { useReducedMotion } from "@mantine/hooks";
 import backdrop from "./Backdrop.module.css";
+import { BrandMark } from "../components/BrandMark";
 import styles from "./SessionLoadingScreen.module.css";
 
 export function SessionLoadingScreen() {
@@ -14,7 +15,7 @@ export function SessionLoadingScreen() {
             <Stack gap="lg">
               <Group justify="space-between" align="flex-start" gap="lg">
                 <Group gap="md" align="center">
-                  <div className={styles.mark} />
+                  <BrandMark size={44} />
                   <div>
                     <Title order={2} className={styles.logo}>
                       Corastuff

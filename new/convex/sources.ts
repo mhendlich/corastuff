@@ -34,14 +34,24 @@ export const upsert = mutationGeneric({
   },
   handler: async (ctx, args) => {
     await requireSession(ctx, args.sessionToken);
+    const slug = args.slug.trim();
+    if (!slug) throw new Error("slug is required");
+    if (slug.length > 64) throw new Error("slug is too long");
+    if (!/^[a-z0-9][a-z0-9_-]*$/.test(slug)) {
+      throw new Error("slug must be lowercase and contain only letters, numbers, _ or -");
+    }
+
+    const displayName = args.displayName.trim();
+    if (!displayName) throw new Error("displayName is required");
+
     const existing = await ctx.db
       .query("sources")
-      .withIndex("by_slug", (q) => q.eq("slug", args.slug))
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
       .unique();
 
     if (existing) {
       await ctx.db.patch(existing._id, {
-        displayName: args.displayName,
+        displayName,
         enabled: args.enabled,
         type: args.type,
         config: args.config
@@ -50,8 +60,8 @@ export const upsert = mutationGeneric({
     }
 
     const id = await ctx.db.insert("sources", {
-      slug: args.slug,
-      displayName: args.displayName,
+      slug,
+      displayName,
       enabled: args.enabled,
       type: args.type,
       config: args.config

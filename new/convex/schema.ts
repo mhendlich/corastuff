@@ -31,6 +31,12 @@ export default defineSchema({
     updatedAt: v.number()
   }).index("by_sourceSlug", ["sourceSlug"]),
 
+  settings: defineTable({
+    key: v.string(),
+    value: v.any(),
+    updatedAt: v.number()
+  }).index("by_key", ["key"]),
+
   runs: defineTable({
     sourceSlug: v.string(),
     status: v.union(

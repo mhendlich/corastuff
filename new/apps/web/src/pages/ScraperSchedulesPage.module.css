@@ -1,0 +1,10 @@
+.saveBar {
+  position: sticky;
+  bottom: 16px;
+  z-index: 10;
+}
+
+.rowDirty td {
+  background: rgba(255, 255, 255, 0.04);
+}
+

@@ -165,22 +165,22 @@ Old reference: `src/webapp/templates/scrapers/*`, `src/webapp/routes.py` scraper
 
 Old reference: `src/webapp/templates/scrapers/schedules.html`, `src/webapp/routes.py` scheduler endpoints, `src/db.py` schedules + concurrency settings.
 
-- [ ] Schedules UI parity
-  - [ ] Global scheduler status panel (running/paused) and controls (start/stop), or a new equivalent if BullMQ scheduling is always-on.
-  - [ ] Bulk enable/disable schedules.
-  - [ ] Bulk set interval minutes.
-  - [ ] Sticky “unsaved changes” save bar (if keeping “save-all” UX) or an explicit “saved” indicator per row.
-  - [ ] Per-source schedule row: enabled toggle, interval, last run, next run.
-- [ ] Concurrency limit parity
-  - [ ] Persist “max concurrent scrapers” setting (old: `ProductDatabase.get_scraper_concurrency_limit`).
-  - [ ] Apply it to BullMQ worker concurrency (or implement a limiter in the enqueuer/scheduler).
+- [x] Schedules UI parity
+  - [x] Global scheduler status panel (running/paused) and controls (pause/resume scheduled runs).
+  - [x] Bulk enable/disable schedules.
+  - [x] Bulk set interval minutes.
+  - [x] Sticky “unsaved changes” save bar.
+  - [x] Per-source schedule row: enabled toggle, interval, last run, next run.
+- [x] Concurrency limit parity
+  - [x] Persist “max concurrent scrapers” setting (Convex `settings`).
+  - [x] Apply it to BullMQ worker concurrency (read at worker startup).
 
 ## 9) Source configuration management (new-only requirement for parity)
 
 Old scrapers are code-defined; new stack is config-driven (`sources.config`).
 
-- [ ] UI to create/edit sources (slug, displayName, type, config JSON with validation) (builder currently supports a basic “save source”).
-- [ ] Validation + “test scrape” action that runs a dry-run and reports errors before enabling schedules (builder dry-run exists, needs generalization).
+- [x] UI to create/edit sources (slug, displayName, type, config JSON with validation) (builder currently supports a basic “save source”).
+- [x] Validation + “test scrape” action that runs a dry-run and reports errors before enabling schedules (builder dry-run exists, needs generalization).
 
 ## 10) Scraper coverage parity (port Python scrapers → TS or decide hybrid)
 

@@ -6,6 +6,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import {
+  AUTOMATION_PAUSED_KEY,
   SCRAPE_QUEUE_NAME,
   RUN_SCRAPER_JOB_NAME,
   getRunScraperScheduler,
@@ -29,6 +30,12 @@ const authLogin = makeFunctionReference<
   { password: string; kind?: "user" | "service"; label?: string; ttlMs?: number },
   { ok: boolean; sessionToken: string; kind: "user" | "service"; label: string | null; expiresAt: number }
 >("authActions:login");
+
+const settingsGetScraperConcurrencyLimit = makeFunctionReference<
+  "query",
+  { sessionToken: string },
+  number
+>("settings:getScraperConcurrencyLimit");
 
 const sourcesGetBySlug = makeFunctionReference<
   "query",
@@ -441,6 +448,10 @@ async function main() {
 
   let convex: ConvexHttpClient | null = convexUrl ? new ConvexHttpClient(convexUrl) : null;
   let convexSessionToken: string | null = null;
+  let concurrencyLimit = Number.parseInt(process.env.SCRAPER_CONCURRENCY_LIMIT ?? "", 10);
+  if (!Number.isFinite(concurrencyLimit) || concurrencyLimit < 1) {
+    concurrencyLimit = 10;
+  }
   if (!convex) {
     console.warn("[worker] CONVEX_URL not set; jobs will run without status updates");
   } else {
@@ -452,12 +463,23 @@ async function main() {
       try {
         const result = await convex.action(authLogin, { password, kind: "service", label: `worker:${workerId}` });
         convexSessionToken = result.sessionToken;
+
+        try {
+          const limit = await convex.query(settingsGetScraperConcurrencyLimit, { sessionToken: convexSessionToken });
+          if (typeof limit === "number" && Number.isFinite(limit) && limit >= 1) {
+            concurrencyLimit = Math.min(100, Math.max(1, Math.trunc(limit)));
+          }
+        } catch (err) {
+          console.warn("[worker] failed to fetch concurrency limit; using fallback:", err);
+        }
       } catch (err) {
         console.warn("[worker] failed to authenticate to Convex; running without Convex updates:", err);
         convex = null;
       }
     }
   }
+
+  console.log(`[worker] concurrency=${concurrencyLimit}`);
 
   const worker = new Worker(
     SCRAPE_QUEUE_NAME,
@@ -475,6 +497,14 @@ async function main() {
       const wasRunIdMissing = !runId;
       if (!sourceSlug) {
         throw new Error("Invalid job payload: expected { sourceSlug: string }");
+      }
+
+      if (wasRunIdMissing && requestedBy === "scheduled") {
+        const raw = await connection.get(AUTOMATION_PAUSED_KEY).catch(() => null);
+        const paused = raw === "1" || raw === "true";
+        if (paused) {
+          return { ok: true, skipped: true, reason: "automation_paused" as const, sourceSlug };
+        }
       }
 
       let convexForRun: ConvexHttpClient | null = convex && convexSessionToken ? convex : null;
@@ -732,7 +762,7 @@ async function main() {
         throw err;
       }
     },
-    { connection }
+    { connection, concurrency: concurrencyLimit }
   );
 
   worker.on("completed", (job) => {

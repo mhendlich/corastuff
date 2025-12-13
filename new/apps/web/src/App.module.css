@@ -1,0 +1,49 @@
+.stage {
+  height: 100%;
+  width: 100%;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(1200px 760px at 20% 10%, rgba(120, 80, 255, 0.46), transparent 62%),
+    radial-gradient(980px 720px at 85% 25%, rgba(65, 220, 255, 0.34), transparent 60%),
+    radial-gradient(980px 760px at 70% 90%, rgba(255, 90, 210, 0.24), transparent 58%),
+    linear-gradient(180deg, rgba(12, 12, 16, 0.5), rgba(6, 6, 10, 0.92));
+  backdrop-filter: blur(10px);
+}
+
+.overlay[data-active="true"] {
+  pointer-events: all;
+  cursor: wait;
+}
+
+.overlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.22;
+  background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.14) 1px, transparent 0);
+  background-size: 18px 18px;
+  mask-image: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.65), transparent 72%);
+  mix-blend-mode: soft-light;
+}
+
+.overlayMark {
+  position: relative;
+  z-index: 1;
+  padding: 18px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--mantine-color-dark-9) 45%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mantine-color-dark-4) 30%, transparent);
+  box-shadow:
+    0 38px 120px rgba(0, 0, 0, 0.72),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+

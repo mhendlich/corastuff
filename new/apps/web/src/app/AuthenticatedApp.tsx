@@ -17,10 +17,13 @@ import { AmazonPricingPage } from "../pages/AmazonPricingPage";
 import { ScrapersPage } from "../pages/ScrapersPage";
 import { ScrapeHistoryPage } from "../pages/ScrapeHistoryPage";
 import { ScrapeRunDetailPage } from "../pages/ScrapeRunDetailPage";
+import { ScraperSchedulesPage } from "../pages/ScraperSchedulesPage";
 import { ScraperBuilderPage } from "../pages/ScraperBuilderPage";
+import { SourcesPage } from "../pages/SourcesPage";
+import { SourceCreatePage } from "../pages/SourceCreatePage";
+import { SourceEditPage } from "../pages/SourceEditPage";
 import { AppLayout } from "./AppLayout";
 import { NotFoundPage } from "./NotFoundPage";
-import { PlaceholderPage } from "./PlaceholderPage";
 import { SessionLoadingScreen } from "./SessionLoadingScreen";
 import backdrop from "./Backdrop.module.css";
 
@@ -83,9 +86,12 @@ export function AuthenticatedApp(props: { sessionToken: string; onLoggedOut: () 
           />
           <Route path="/amazon-pricing" element={<AmazonPricingPage sessionToken={props.sessionToken} />} />
           <Route path="/scrapers" element={<ScrapersPage sessionToken={props.sessionToken} />} />
+          <Route path="/scrapers/sources" element={<SourcesPage sessionToken={props.sessionToken} />} />
+          <Route path="/scrapers/sources/new" element={<SourceCreatePage sessionToken={props.sessionToken} />} />
+          <Route path="/scrapers/sources/:slug" element={<SourceEditPage sessionToken={props.sessionToken} />} />
           <Route path="/scrapers/history" element={<ScrapeHistoryPage sessionToken={props.sessionToken} />} />
           <Route path="/scrapers/history/:runId" element={<ScrapeRunDetailPage sessionToken={props.sessionToken} />} />
-          <Route path="/scrapers/schedules" element={<PlaceholderPage title="Automation" />} />
+          <Route path="/scrapers/schedules" element={<ScraperSchedulesPage sessionToken={props.sessionToken} />} />
           <Route path="/history" element={<ScrapeHistoryPage sessionToken={props.sessionToken} />} />
           <Route path="/builder" element={<ScraperBuilderPage sessionToken={props.sessionToken} />} />
           <Route path="/scrapers/builder" element={<Navigate to="/builder" replace />} />

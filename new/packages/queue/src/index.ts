@@ -23,6 +23,8 @@ export function createRedisConnection(redisUrl: string) {
   return new Redis(redisUrl, { maxRetriesPerRequest: null });
 }
 
+export const AUTOMATION_PAUSED_KEY = "corastuff:automation:paused" as const;
+
 export async function enqueueRunScraperJob(
   redisUrl: string,
   data: RunScraperJobData,

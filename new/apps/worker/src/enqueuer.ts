@@ -1,8 +1,15 @@
 import http from "node:http";
-import { cancelRunScraperJob, enqueueRunScraperJob, upsertRunScraperScheduler } from "@corastuff/queue";
+import {
+  AUTOMATION_PAUSED_KEY,
+  cancelRunScraperJob,
+  createRedisConnection,
+  enqueueRunScraperJob,
+  upsertRunScraperScheduler
+} from "@corastuff/queue";
 
 const redisUrl = process.env.REDIS_URL ?? "redis://redis:6379";
 const port = Number.parseInt(process.env.PORT ?? "4000", 10) || 4000;
+const redis = createRedisConnection(redisUrl);
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown) {
   const data = JSON.stringify(body);
@@ -24,6 +31,20 @@ async function readJson(req: http.IncomingMessage, maxBytes = 1024 * 1024): Prom
   const raw = Buffer.concat(chunks).toString("utf8");
   if (!raw.trim()) return {};
   return JSON.parse(raw);
+}
+
+async function isAutomationPaused() {
+  const raw = await redis.get(AUTOMATION_PAUSED_KEY);
+  return raw === "1" || raw === "true";
+}
+
+async function setAutomationPaused(paused: boolean) {
+  if (paused) {
+    await redis.set(AUTOMATION_PAUSED_KEY, "1");
+  } else {
+    await redis.del(AUTOMATION_PAUSED_KEY);
+  }
+  return await isAutomationPaused();
 }
 
 const server = http.createServer(async (req, res) => {
@@ -95,6 +116,21 @@ const server = http.createServer(async (req, res) => {
       });
 
       return sendJson(res, 200, { ok: true, ...result });
+    }
+
+    if (req.method === "GET" && url.pathname === "/schedules/status") {
+      const paused = await isAutomationPaused();
+      return sendJson(res, 200, { ok: true, paused });
+    }
+
+    if (req.method === "POST" && url.pathname === "/schedules/pause") {
+      const paused = await setAutomationPaused(true);
+      return sendJson(res, 200, { ok: true, paused });
+    }
+
+    if (req.method === "POST" && url.pathname === "/schedules/resume") {
+      const paused = await setAutomationPaused(false);
+      return sendJson(res, 200, { ok: true, paused });
     }
 
     return sendJson(res, 404, { ok: false, error: "Not found" });

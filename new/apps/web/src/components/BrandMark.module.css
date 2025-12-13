@@ -1,0 +1,12 @@
+.mark {
+  width: var(--mark-size, 44px);
+  height: var(--mark-size, 44px);
+  border-radius: calc(var(--mark-size, 44px) * 0.36);
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.26), transparent 42%),
+    linear-gradient(135deg, rgba(120, 80, 255, 1), rgba(65, 220, 255, 1));
+  box-shadow:
+    0 22px 60px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+

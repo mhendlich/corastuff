@@ -1,0 +1,9 @@
+.slug {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-sm);
+}
+
+.rowActions {
+  white-space: nowrap;
+}
+
