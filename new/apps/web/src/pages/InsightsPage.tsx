@@ -1,5 +1,6 @@
 import { useQuery } from "convex/react";
 import { Anchor, Badge, Card, Container, Group, SimpleGrid, Stack, Table, Text, Title } from "@mantine/core";
+import { DonutChart } from "@mantine/charts";
 import { Link } from "react-router-dom";
 import { MetricTile } from "../components/MetricTile";
 import { Panel } from "../components/Panel";
@@ -24,6 +25,16 @@ export function InsightsPage(props: { sessionToken: string }) {
       </Container>
     );
   }
+
+  const donutData = [
+    { name: "Drops", value: snapshot.summary.recentDrops, color: "teal" },
+    { name: "Spikes", value: snapshot.summary.recentSpikes, color: "yellow" },
+    { name: "New extremes", value: snapshot.summary.newExtremes, color: "violet" },
+    { name: "Outliers", value: snapshot.summary.outliers, color: "cyan" },
+    { name: "Stale sources", value: snapshot.summary.staleSources, color: "gray" },
+    { name: "Failures", value: snapshot.summary.recentFailures, color: "red" }
+  ].filter((d) => d.value > 0);
+  const donutTotal = donutData.reduce((acc, d) => acc + d.value, 0);
 
   return (
     <Container size="xl" py="xl">
@@ -68,6 +79,61 @@ export function InsightsPage(props: { sessionToken: string }) {
             hint="Failed runs in last 36h."
             tone="danger"
           />
+        </SimpleGrid>
+
+        <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md">
+          <Panel>
+            <Group justify="space-between" align="flex-end" wrap="wrap" gap="md">
+              <div>
+                <Title order={4}>Overview</Title>
+                <Text size="sm" c="dimmed">
+                  What changed since the last snapshot
+                </Text>
+              </div>
+              <Badge variant="light" color="gray">
+                {donutTotal} signals
+              </Badge>
+            </Group>
+            {donutTotal === 0 ? (
+              <Text c="dimmed" size="sm" mt="lg">
+                No anomalies detected yet.
+              </Text>
+            ) : (
+              <Group mt="lg" justify="center">
+                <DonutChart
+                  data={donutData}
+                  size={220}
+                  thickness={26}
+                  withTooltip
+                  tooltipDataSource="segment"
+                  chartLabel={donutTotal}
+                  valueFormatter={(v) => String(v)}
+                />
+              </Group>
+            )}
+          </Panel>
+
+          <Panel variant="subtle">
+            <Group justify="space-between" align="flex-end" wrap="wrap" gap="md">
+              <div>
+                <Title order={4}>How to use this</Title>
+                <Text size="sm" c="dimmed">
+                  A quick workflow for triage
+                </Text>
+              </div>
+            </Group>
+            <Stack gap="xs" mt="lg">
+              <Text size="sm">
+                1) Start with <Text component="span" fw={700} inherit>Last-Run Movers</Text> to validate obvious changes.
+              </Text>
+              <Text size="sm">
+                2) Check <Text component="span" fw={700} inherit>Outliers</Text> for linking mistakes or currency mismatches.
+              </Text>
+              <Text size="sm">
+                3) Use <Text component="span" fw={700} inherit>Coverage gaps</Text> to prioritize new links.
+              </Text>
+            </Stack>
+          </Panel>
         </SimpleGrid>
 
         <SimpleGrid cols={{ base: 1, lg: 3 }} spacing="md">

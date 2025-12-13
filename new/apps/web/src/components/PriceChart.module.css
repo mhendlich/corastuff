@@ -1,34 +1,8 @@
-.svg {
-  width: 100%;
-  height: auto;
-  display: block;
-}
-
-.bg {
-  fill: color-mix(in srgb, var(--mantine-color-dark-9) 55%, transparent);
-  stroke: color-mix(in srgb, var(--mantine-color-dark-4) 18%, transparent);
-  stroke-width: 1;
-}
-
-.grid {
-  stroke: color-mix(in srgb, var(--mantine-color-dark-2) 20%, transparent);
-  stroke-width: 1;
-}
-
-.axis {
-  fill: color-mix(in srgb, var(--mantine-color-gray-3) 78%, transparent);
-  font-size: 22px;
-  font-family: var(--mantine-font-family-monospace);
-}
-
-.path {
-  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--mantine-color-dark-9) 35%, transparent));
-}
-
-.swatch {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
+.chart {
+  border: 1px solid color-mix(in srgb, var(--mantine-color-dark-4) 18%, transparent);
+  border-radius: 16px;
+  padding: 8px 8px 0;
+  background: color-mix(in srgb, var(--mantine-color-dark-9) 55%, transparent);
 }
 
 .empty {
@@ -39,4 +13,3 @@
   align-items: center;
   justify-content: center;
 }
-

@@ -7,6 +7,7 @@ import {
   Burger,
   Button,
   Group,
+  Kbd,
   ScrollArea,
   Stack,
   Text,
@@ -15,17 +16,27 @@ import {
   Tooltip
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
-import { IconLogout2 } from "@tabler/icons-react";
+import { completeNavigationProgress, startNavigationProgress } from "@mantine/nprogress";
+import { openSpotlight } from "@mantine/spotlight";
+import { IconLogout2, IconSearch } from "@tabler/icons-react";
 import { NavLink as RouterNavLink, Outlet, useLocation } from "react-router-dom";
+import { useEffect } from "react";
 import { fmtTs } from "../lib/time";
 import { NAV_ITEMS } from "./nav";
 import { pageMeta } from "./pageMeta";
+import { AppSpotlight } from "./AppSpotlight";
 import classes from "./AppLayout.module.css";
 
 export function AppLayout(props: { session: SessionInfo; onLogout: () => Promise<void> }) {
   const location = useLocation();
   const meta = pageMeta(location.pathname);
   const [mobileOpened, mobile] = useDisclosure(false);
+
+  useEffect(() => {
+    startNavigationProgress();
+    const t = window.setTimeout(() => completeNavigationProgress(), 260);
+    return () => window.clearTimeout(t);
+  }, [location.pathname]);
 
   return (
     <AppShell
@@ -57,6 +68,20 @@ export function AppLayout(props: { session: SessionInfo; onLogout: () => Promise
           </Group>
 
           <Group gap="sm">
+            <Tooltip
+              label={
+                <Group gap={6}>
+                  <Text size="xs">Search</Text>
+                  <Kbd>⌘</Kbd>
+                  <Kbd>K</Kbd>
+                </Group>
+              }
+              withArrow
+            >
+              <ActionIcon variant="default" size="lg" onClick={() => openSpotlight()} aria-label="Search">
+                <IconSearch size={18} />
+              </ActionIcon>
+            </Tooltip>
             <Badge variant="light" color="gray" visibleFrom="sm">
               {props.session.kind}
               {props.session.label ? ` (${props.session.label})` : ""} • expires {fmtTs(props.session.expiresAt)}
@@ -141,6 +166,7 @@ export function AppLayout(props: { session: SessionInfo; onLogout: () => Promise
       </AppShell.Navbar>
 
       <AppShell.Main className={classes.main}>
+        <AppSpotlight />
         <Outlet />
       </AppShell.Main>
     </AppShell>

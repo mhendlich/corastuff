@@ -1,14 +1,17 @@
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useEffect, useMemo, useState } from "react";
+import { CodeHighlight } from "@mantine/code-highlight";
+import { Carousel } from "@mantine/carousel";
 import {
+  Accordion,
   ActionIcon,
   Anchor,
   Badge,
   Button,
-  Code,
   Container,
   Divider,
   Group,
+  Image,
   Loader,
   ScrollArea,
   SimpleGrid,
@@ -17,8 +20,19 @@ import {
   Title,
   Tooltip
 } from "@mantine/core";
+import { Dropzone } from "@mantine/dropzone";
+import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
-import { IconBolt, IconCircleX, IconDatabaseImport, IconRefresh, IconX } from "@tabler/icons-react";
+import {
+  IconBolt,
+  IconCircleX,
+  IconDatabaseImport,
+  IconBraces,
+  IconFileText,
+  IconPhoto,
+  IconRefresh,
+  IconX
+} from "@tabler/icons-react";
 import { MetricTile } from "../components/MetricTile";
 import { Panel } from "../components/Panel";
 import { RunRow } from "../features/dashboard/components/RunRow";
@@ -48,7 +62,6 @@ import {
   type DashboardStats,
   type LinkCountsBySource,
   type ResetAllResult,
-  type RunArtifactDoc,
   type RunsRequestAllResult,
   type SourceLastScrape
 } from "../convexFns";
@@ -108,12 +121,25 @@ export function DashboardPage(props: { sessionToken: string }) {
     return map;
   }, [activeRuns]);
 
-  const runArtifactsByKey = useMemo(
-    () => new Map<string, RunArtifactDoc>(runArtifacts.map((a) => [a.key, a])),
+  const screenshotArtifacts = useMemo(
+    () =>
+      runArtifacts.filter(
+        (a) => a.type === "screenshot" || /\.(png|jpe?g|webp|gif)$/i.test(a.path) || a.key.toLowerCase().includes("screenshot")
+      ),
     [runArtifacts]
   );
-  const runLogArtifact = runArtifactsByKey.get("run.log");
-  const productsJsonArtifact = runArtifactsByKey.get("products.json");
+
+  const [localArtifact, setLocalArtifact] = useState<
+    | {
+        name: string;
+        kind: "json" | "text";
+        text: string;
+        json?: unknown;
+        error?: string;
+      }
+    | null
+  >(null);
+  useEffect(() => setLocalArtifact(null), [selectedRunId]);
 
   const [runRequestingBySlug, setRunRequestingBySlug] = useState<Record<string, boolean>>({});
   const [runRequestErrorBySlug, setRunRequestErrorBySlug] = useState<Record<string, string | null>>({});
@@ -212,9 +238,13 @@ export function DashboardPage(props: { sessionToken: string }) {
                 <Text size="xs" c="dimmed" fw={700} tt="uppercase" className={text.tracking}>
                   Run all result
                 </Text>
-                <Code block mt={8}>
-                  {JSON.stringify(runAllResult, null, 2)}
-                </Code>
+                <CodeHighlight
+                  mt={8}
+                  code={JSON.stringify(runAllResult, null, 2)}
+                  language="json"
+                  withCopyButton
+                  withExpandButton
+                />
               </Panel>
             ) : null}
 
@@ -349,22 +379,190 @@ export function DashboardPage(props: { sessionToken: string }) {
                 </Text>
               ) : null}
 
-              {selectedRunId && (runLogArtifact || productsJsonArtifact) ? (
-                <Group gap="md" mt="md">
-                  <Text size="xs" c="dimmed" fw={700} tt="uppercase" className={text.tracking}>
-                    Artifacts
-                  </Text>
-                  {productsJsonArtifact ? (
-                    <Anchor href={`/media/${productsJsonArtifact.path}`} target="_blank" rel="noreferrer" size="sm">
-                      products.json
-                    </Anchor>
-                  ) : null}
-                  {runLogArtifact ? (
-                    <Anchor href={`/media/${runLogArtifact.path}`} target="_blank" rel="noreferrer" size="sm">
-                      run.log
-                    </Anchor>
-                  ) : null}
-                </Group>
+              {selectedRunId && runArtifacts.length > 0 ? (
+                <Accordion variant="separated" mt="md">
+                  <Accordion.Item value="artifacts">
+                    <Accordion.Control>
+                      <Group justify="space-between" wrap="nowrap" gap="md">
+                        <Group gap="xs" wrap="nowrap">
+                          <Text size="xs" c="dimmed" fw={700} tt="uppercase" className={text.tracking}>
+                            Artifacts
+                          </Text>
+                          <Badge variant="light" color="gray" radius="xl">
+                            {runArtifacts.length}
+                          </Badge>
+                        </Group>
+                        <Text size="xs" c="dimmed" visibleFrom="sm">
+                          Click to preview
+                        </Text>
+                      </Group>
+                    </Accordion.Control>
+                    <Accordion.Panel>
+                      <Group gap="sm" wrap="wrap">
+                        {runArtifacts.map((a) => {
+                          const href = `/media/${a.path}`;
+                          const left =
+                            a.type === "screenshot" || /\.(png|jpe?g|webp|gif)$/i.test(a.path) ? (
+                              <IconPhoto size={14} />
+                            ) : a.type === "json" || a.key.endsWith(".json") ? (
+                              <IconBraces size={14} />
+                            ) : (
+                              <IconFileText size={14} />
+                            );
+                          return (
+                            <Anchor key={a._id} href={href} target="_blank" rel="noreferrer" size="sm">
+                              <Group gap={6} wrap="nowrap">
+                                {left}
+                                <Text component="span" inherit className={text.mono}>
+                                  {a.key}
+                                </Text>
+                              </Group>
+                            </Anchor>
+                          );
+                        })}
+                      </Group>
+
+                      {screenshotArtifacts.length > 0 ? (
+                        <Carousel
+                          mt="md"
+                          slideSize={{ base: "100%", md: "70%" }}
+                          slideGap="md"
+                          withIndicators
+                          height={360}
+                        >
+                          {screenshotArtifacts.map((a) => (
+                            <Carousel.Slide key={a._id}>
+                              <Anchor href={`/media/${a.path}`} target="_blank" rel="noreferrer">
+                                <Image
+                                  src={`/media/${a.path}`}
+                                  alt={a.key}
+                                  radius="md"
+                                  h={360}
+                                  fit="contain"
+                                  styles={{ root: { background: "color-mix(in srgb, var(--mantine-color-dark-9) 40%, transparent)" } }}
+                                />
+                              </Anchor>
+                            </Carousel.Slide>
+                          ))}
+                        </Carousel>
+                      ) : null}
+                    </Accordion.Panel>
+                  </Accordion.Item>
+
+                  <Accordion.Item value="inspect-local">
+                    <Accordion.Control>
+                      <Group justify="space-between" wrap="nowrap" gap="md">
+                        <Group gap="xs" wrap="nowrap">
+                          <Text size="xs" c="dimmed" fw={700} tt="uppercase" className={text.tracking}>
+                            Inspect local file
+                          </Text>
+                        </Group>
+                        <Text size="xs" c="dimmed" visibleFrom="sm">
+                          Drop `products.json` or `run.log`
+                        </Text>
+                      </Group>
+                    </Accordion.Control>
+                    <Accordion.Panel>
+                      <Dropzone
+                        maxFiles={1}
+                        onDrop={async (files) => {
+                          const f = files[0];
+                          if (!f) return;
+                          const text = (await f.text()).slice(0, 600_000);
+                          const kind: "json" | "text" = f.name.endsWith(".json") ? "json" : "text";
+                          if (kind === "json") {
+                            try {
+                              const json = JSON.parse(text);
+                              setLocalArtifact({ name: f.name, kind, text, json });
+                            } catch (err) {
+                              setLocalArtifact({
+                                name: f.name,
+                                kind,
+                                text,
+                                error: err instanceof Error ? err.message : String(err)
+                              });
+                            }
+                          } else {
+                            setLocalArtifact({ name: f.name, kind, text });
+                          }
+                        }}
+                        onReject={() => setLocalArtifact(null)}
+                        accept={[
+                          "application/json",
+                          "text/plain",
+                          "application/octet-stream",
+                          "text/*"
+                        ]}
+                      >
+                        <Group justify="center" gap="md" style={{ minHeight: 96 }}>
+                          <Text size="sm" c="dimmed">
+                            Drag & drop a file here, or click to select
+                          </Text>
+                        </Group>
+                      </Dropzone>
+
+                      {localArtifact ? (
+                        <Stack gap="sm" mt="md">
+                          <Group justify="space-between" wrap="wrap">
+                            <Text size="sm" fw={700}>
+                              {localArtifact.name}
+                            </Text>
+                            {localArtifact.error ? (
+                              <Badge variant="light" color="red">
+                                parse error
+                              </Badge>
+                            ) : localArtifact.kind === "json" ? (
+                              <Badge variant="light" color="gray">
+                                json
+                              </Badge>
+                            ) : (
+                              <Badge variant="light" color="gray">
+                                text
+                              </Badge>
+                            )}
+                          </Group>
+
+                          {localArtifact.kind === "json" && localArtifact.json && !localArtifact.error ? (
+                            <Panel variant="subtle" radius="md" p="md">
+                              <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
+                                <MetricTile
+                                  label="Top-level"
+                                  value={Array.isArray(localArtifact.json) ? "array" : typeof localArtifact.json}
+                                  size="sm"
+                                />
+                                <MetricTile
+                                  label="Items"
+                                  value={Array.isArray(localArtifact.json) ? String(localArtifact.json.length) : "—"}
+                                  size="sm"
+                                />
+                                <MetricTile
+                                  label="Bytes (truncated)"
+                                  value={String(localArtifact.text.length)}
+                                  size="sm"
+                                />
+                                <MetricTile label="Kind" value={localArtifact.kind} size="sm" />
+                              </SimpleGrid>
+                            </Panel>
+                          ) : null}
+
+                          <CodeHighlight
+                            code={
+                              localArtifact.kind === "json"
+                                ? localArtifact.error
+                                  ? localArtifact.text
+                                  : JSON.stringify(localArtifact.json ?? null, null, 2)
+                                : localArtifact.text
+                            }
+                            language={localArtifact.kind === "json" ? "json" : "text"}
+                            withCopyButton
+                            withExpandButton
+                            maxCollapsedHeight={240}
+                          />
+                        </Stack>
+                      ) : null}
+                    </Accordion.Panel>
+                  </Accordion.Item>
+                </Accordion>
               ) : null}
 
               <Divider my="md" />
@@ -375,7 +573,7 @@ export function DashboardPage(props: { sessionToken: string }) {
                 <Text c="dimmed">No events yet.</Text>
               ) : (
                 <ScrollArea h={520} offsetScrollbars scrollbarSize={8}>
-                  <Stack gap="sm">
+                  <Accordion variant="separated" multiple>
                     {runEventsChrono.map((e) => {
                       const links =
                         isRecord(e.payload) &&
@@ -396,34 +594,51 @@ export function DashboardPage(props: { sessionToken: string }) {
                               ? "gray"
                               : "cyan";
 
+                      const payloadCode =
+                        typeof e.payload === "string" ? e.payload : JSON.stringify(e.payload, null, 2);
+
+                      const payloadLang = typeof e.payload === "string" ? "text" : "json";
+
                       return (
-                        <Panel key={e._id} variant="subtle" radius="md" p="md">
-                          <Group justify="space-between" align="flex-start" wrap="nowrap" gap="md">
-                            <Text size="sm" className={text.mono} style={{ minWidth: 0 }}>
-                              {eventSummary(e)}
-                            </Text>
-                            <Badge variant="light" color={levelColor} radius="xl">
-                              {e.level}
-                            </Badge>
-                          </Group>
-                          {links ? (
-                            <Group gap="md" mt="sm">
-                              {links.productsJson ? (
-                                <Anchor href={links.productsJson} target="_blank" rel="noreferrer" size="sm">
-                                  products.json
-                                </Anchor>
-                              ) : null}
-                              {links.runLog ? (
-                                <Anchor href={links.runLog} target="_blank" rel="noreferrer" size="sm">
-                                  run.log
-                                </Anchor>
-                              ) : null}
+                        <Accordion.Item key={e._id} value={e._id}>
+                          <Accordion.Control>
+                            <Group justify="space-between" align="flex-start" wrap="nowrap" gap="md">
+                              <Text size="sm" className={text.mono} style={{ minWidth: 0 }}>
+                                {eventSummary(e)}
+                              </Text>
+                              <Badge variant="light" color={levelColor} radius="xl">
+                                {e.level}
+                              </Badge>
                             </Group>
-                          ) : null}
-                        </Panel>
+                          </Accordion.Control>
+                          <Accordion.Panel>
+                            {links ? (
+                              <Group gap="md" mb="sm">
+                                {links.productsJson ? (
+                                  <Anchor href={links.productsJson} target="_blank" rel="noreferrer" size="sm">
+                                    products.json
+                                  </Anchor>
+                                ) : null}
+                                {links.runLog ? (
+                                  <Anchor href={links.runLog} target="_blank" rel="noreferrer" size="sm">
+                                    run.log
+                                  </Anchor>
+                                ) : null}
+                              </Group>
+                            ) : null}
+
+                            <CodeHighlight
+                              code={payloadCode}
+                              language={payloadLang}
+                              withCopyButton
+                              withExpandButton
+                              maxCollapsedHeight={220}
+                            />
+                          </Accordion.Panel>
+                        </Accordion.Item>
                       );
                     })}
-                  </Stack>
+                  </Accordion>
                 </ScrollArea>
               )}
             </Panel>
@@ -444,25 +659,35 @@ export function DashboardPage(props: { sessionToken: string }) {
                     color="red"
                     leftSection={<IconRefresh size={16} />}
                     loading={backfilling}
-                    onClick={async () => {
+                    onClick={() => {
                       if (backfilling) return;
-                      if (
-                        !window.confirm(
-                          "Backfill productsLatest.lastSeenRunId from each source's lastSuccessfulRunId?"
-                        )
-                      )
-                        return;
-                      setBackfilling(true);
-                      setBackfillError(null);
-                      setBackfillResult(null);
-                      try {
-                        const result = await backfillProductsLatestLastSeenRunId({ sessionToken, batchSize: 500 });
-                        setBackfillResult(result);
-                      } catch (err) {
-                        setBackfillError(err instanceof Error ? err.message : String(err));
-                      } finally {
-                        setBackfilling(false);
-                      }
+                      modals.openConfirmModal({
+                        title: "Backfill lastSeenRunIds?",
+                        centered: true,
+                        labels: { confirm: "Backfill", cancel: "Cancel" },
+                        confirmProps: { color: "red" },
+                        children: (
+                          <Text size="sm">
+                            Backfill <Text component="span" className={text.mono} inherit>productsLatest.lastSeenRunId</Text>{" "}
+                            from each source&apos;s last successful run. This should be safe but may touch lots of rows.
+                          </Text>
+                        ),
+                        onConfirm: () => {
+                          void (async () => {
+                            setBackfilling(true);
+                            setBackfillError(null);
+                            setBackfillResult(null);
+                            try {
+                              const result = await backfillProductsLatestLastSeenRunId({ sessionToken, batchSize: 500 });
+                              setBackfillResult(result);
+                            } catch (err) {
+                              setBackfillError(err instanceof Error ? err.message : String(err));
+                            } finally {
+                              setBackfilling(false);
+                            }
+                          })();
+                        }
+                      });
                     }}
                   >
                     Backfill lastSeenRunIds
@@ -472,21 +697,37 @@ export function DashboardPage(props: { sessionToken: string }) {
                     color="red"
                     leftSection={<IconX size={16} />}
                     loading={resetting}
-                    onClick={async () => {
+                    onClick={() => {
                       if (resetting) return;
-                      if (!window.confirm("Reset all Convex data? This cannot be undone.")) return;
-                      if (!window.confirm("This will delete runs, products, and links. Are you absolutely sure?")) return;
-                      setResetting(true);
-                      setResetError(null);
-                      setResetResult(null);
-                      try {
-                        const result = await resetAll({ sessionToken, deleteSchedules: true });
-                        setResetResult(result);
-                      } catch (err) {
-                        setResetError(err instanceof Error ? err.message : String(err));
-                      } finally {
-                        setResetting(false);
-                      }
+                      modals.openConfirmModal({
+                        title: "Reset everything?",
+                        centered: true,
+                        labels: { confirm: "Reset", cancel: "Cancel" },
+                        confirmProps: { color: "red" },
+                        children: (
+                          <Stack gap={8}>
+                            <Text size="sm">This will delete runs, products, price points, links and schedules.</Text>
+                            <Text size="xs" c="dimmed">
+                              There is no undo.
+                            </Text>
+                          </Stack>
+                        ),
+                        onConfirm: () => {
+                          void (async () => {
+                            setResetting(true);
+                            setResetError(null);
+                            setResetResult(null);
+                            try {
+                              const result = await resetAll({ sessionToken, deleteSchedules: true });
+                              setResetResult(result);
+                            } catch (err) {
+                              setResetError(err instanceof Error ? err.message : String(err));
+                            } finally {
+                              setResetting(false);
+                            }
+                          })();
+                        }
+                      });
                     }}
                   >
                     Reset everything
@@ -500,9 +741,13 @@ export function DashboardPage(props: { sessionToken: string }) {
                 </Text>
               ) : null}
               {backfillResult ? (
-                <Code block mt="md">
-                  {JSON.stringify(backfillResult, null, 2)}
-                </Code>
+                <CodeHighlight
+                  mt="md"
+                  code={JSON.stringify(backfillResult, null, 2)}
+                  language="json"
+                  withCopyButton
+                  withExpandButton
+                />
               ) : null}
 
               {resetError ? (
@@ -511,9 +756,13 @@ export function DashboardPage(props: { sessionToken: string }) {
                 </Text>
               ) : null}
               {resetResult ? (
-                <Code block mt="md">
-                  {JSON.stringify(resetResult, null, 2)}
-                </Code>
+                <CodeHighlight
+                  mt="md"
+                  code={JSON.stringify(resetResult, null, 2)}
+                  language="json"
+                  withCopyButton
+                  withExpandButton
+                />
               ) : (
                 <Text size="xs" c="dimmed" mt="md">
                   Tip: use “Seed demo” after a reset to restore the demo sources.
@@ -526,4 +775,3 @@ export function DashboardPage(props: { sessionToken: string }) {
     </Container>
   );
 }
-

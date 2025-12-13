@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "convex/react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button, Container, Group, Stack, Text, Textarea, TextInput } from "@mantine/core";
+import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { PageHeader } from "../components/PageHeader";
 import { Panel } from "../components/Panel";
@@ -19,14 +20,22 @@ export function CanonicalEditPage(props: { sessionToken: string }) {
   );
   const update = useMutation(canonicalsUpdate);
 
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const form = useForm({
+    initialValues: { name: "", description: "" },
+    validate: {
+      name: (value) => (value.trim() ? null : "Name is required")
+    }
+  });
 
   useEffect(() => {
     if (!canonical) return;
-    setName(canonical.name ?? "");
-    setDescription(canonical.description ?? "");
+    form.setValues({ name: canonical.name ?? "", description: canonical.description ?? "" });
+  }, [canonical?._id]);
+
+  useEffect(() => {
+    form.resetDirty();
   }, [canonical?._id]);
 
   if (!canonicalId) {
@@ -53,20 +62,14 @@ export function CanonicalEditPage(props: { sessionToken: string }) {
     );
   }
 
-  const onSave = async () => {
-    const trimmedName = name.trim();
-    if (!trimmedName) {
-      notifications.show({ title: "Name required", message: "Enter a canonical name.", color: "red" });
-      return;
-    }
-
+  const onSave = async (values: { name: string; description: string }) => {
     setSaving(true);
     try {
       await update({
         sessionToken: props.sessionToken,
         canonicalId,
-        name: trimmedName,
-        description: description.trim() ? description.trim() : undefined
+        name: values.name.trim(),
+        description: values.description.trim() ? values.description.trim() : undefined
       });
       notifications.show({ title: "Saved", message: "Canonical updated." });
       navigate(`/products/${canonicalId}`);
@@ -83,34 +86,31 @@ export function CanonicalEditPage(props: { sessionToken: string }) {
 
   return (
     <Container size="md" py="xl">
-      <Stack gap="lg">
-        <PageHeader
-          title="Edit product"
-          subtitle="Update canonical name and description."
-          right={
-            <Group gap="sm">
-              <Button variant="default" onClick={() => navigate(`/products/${canonicalId}`)}>
-                Cancel
-              </Button>
-              <Button loading={saving} onClick={() => void onSave()}>
-                Save
-              </Button>
-            </Group>
-          }
-        />
+      <form onSubmit={form.onSubmit((values) => void onSave(values))}>
+        <Stack gap="lg">
+          <PageHeader
+            title="Edit product"
+            subtitle="Update canonical name and description."
+            right={
+              <Group gap="sm">
+                <Button variant="default" type="button" onClick={() => navigate(`/products/${canonicalId}`)}>
+                  Cancel
+                </Button>
+                <Button type="submit" loading={saving} disabled={!form.isDirty()}>
+                  Save
+                </Button>
+              </Group>
+            }
+          />
 
-        <Panel>
-          <Stack gap="md" className={classes.formRow}>
-            <TextInput label="Name" required value={name} onChange={(e) => setName(e.currentTarget.value)} />
-            <Textarea
-              label="Description"
-              value={description}
-              onChange={(e) => setDescription(e.currentTarget.value)}
-              minRows={3}
-            />
-          </Stack>
-        </Panel>
-      </Stack>
+          <Panel>
+            <Stack gap="md" className={classes.formRow}>
+              <TextInput label="Name" required {...form.getInputProps("name")} />
+              <Textarea label="Description" minRows={3} autosize {...form.getInputProps("description")} />
+            </Stack>
+          </Panel>
+        </Stack>
+      </form>
     </Container>
   );
 }

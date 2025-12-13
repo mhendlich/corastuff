@@ -1,6 +1,7 @@
 import { useQuery } from "convex/react";
 import { useMemo, useState } from "react";
 import { useDebouncedValue } from "@mantine/hooks";
+import { DatePickerInput } from "@mantine/dates";
 import { useNavigate } from "react-router-dom";
 import {
   Badge,
@@ -50,6 +51,7 @@ export function PricesPage(props: { sessionToken: string }) {
   const [q, setQ] = useState("");
   const [minPrice, setMinPrice] = useState<string | number | undefined>(undefined);
   const [maxPrice, setMaxPrice] = useState<string | number | undefined>(undefined);
+  const [seenRange, setSeenRange] = useState<[string | null, string | null]>([null, null]);
   const [selectedCanonicalId, setSelectedCanonicalId] = useState<string | null>(null);
 
   const [qDebounced] = useDebouncedValue(q, 250);
@@ -86,7 +88,23 @@ export function PricesPage(props: { sessionToken: string }) {
     [canonicals]
   );
 
-  const sections = overview?.sources ?? [];
+  const sections = useMemo(() => {
+    const raw = overview?.sources ?? [];
+    const [from, to] = seenRange;
+    if (!from && !to) return raw;
+
+    const fromTs = from ? new Date(`${from}T00:00:00`).getTime() : null;
+    const toTs = to ? new Date(`${to}T23:59:59.999`).getTime() : null;
+
+    return raw.map((s) => ({
+      ...s,
+      products: s.products.filter((p) => {
+        if (fromTs !== null && p.lastSeenAt < fromTs) return false;
+        if (toTs !== null && p.lastSeenAt > toTs) return false;
+        return true;
+      })
+    }));
+  }, [overview, seenRange]);
 
   const totalVisible = useMemo(
     () => sections.reduce((acc, s) => acc + (s.products?.length ?? 0), 0),
@@ -121,7 +139,7 @@ export function PricesPage(props: { sessionToken: string }) {
 
         <Panel>
           <Stack gap="md">
-            <SimpleGrid cols={{ base: 1, md: 2, lg: 4 }} spacing="md">
+            <SimpleGrid cols={{ base: 1, md: 2, lg: 5 }} spacing="md">
               <TextInput
                 leftSection={<IconSearch size={16} />}
                 placeholder="Search product name or SKU…"
@@ -151,6 +169,14 @@ export function PricesPage(props: { sessionToken: string }) {
                 min={0}
                 allowDecimal
                 decimalScale={2}
+              />
+              <DatePickerInput
+                type="range"
+                clearable
+                allowSingleDateInRange
+                placeholder="Seen between…"
+                value={seenRange}
+                onChange={setSeenRange}
               />
             </SimpleGrid>
 
@@ -183,6 +209,7 @@ export function PricesPage(props: { sessionToken: string }) {
                   setSourceSlug(null);
                   setMinPrice(undefined);
                   setMaxPrice(undefined);
+                  setSeenRange([null, null]);
                 }}
               >
                 Reset filters
@@ -195,6 +222,10 @@ export function PricesPage(props: { sessionToken: string }) {
           <Text c="dimmed">Loading products…</Text>
         ) : (
           <Stack gap="lg">
+            {sections.filter((s) => s.products.length > 0).length === 0 ? (
+              <Text c="dimmed">No priced items match the current filters.</Text>
+            ) : null}
+
             {sections
               .filter((s) => s.products.length > 0)
               .map((s) => (
@@ -317,10 +348,6 @@ export function PricesPage(props: { sessionToken: string }) {
                   )}
                 </Panel>
               ))}
-
-            {sections.every((s) => s.products.length === 0) ? (
-              <Text c="dimmed">No priced items match the current filters.</Text>
-            ) : null}
           </Stack>
         )}
       </Stack>

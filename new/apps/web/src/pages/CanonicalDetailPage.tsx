@@ -8,15 +8,16 @@ import {
   Button,
   Container,
   Group,
-  Modal,
   Stack,
   Table,
   Text,
   Title,
   Tooltip
 } from "@mantine/core";
+import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
 import { IconEdit, IconTrash, IconUnlink } from "@tabler/icons-react";
+import { NotesEditor } from "../components/NotesEditor";
 import { PageHeader } from "../components/PageHeader";
 import { Panel } from "../components/Panel";
 import text from "../ui/text.module.css";
@@ -42,7 +43,6 @@ export function CanonicalDetailPage(props: { sessionToken: string }) {
   const unlink = useMutation(linksUnlink);
   const remove = useMutation(canonicalsRemove);
 
-  const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const rows = useMemo(() => {
@@ -90,17 +90,35 @@ export function CanonicalDetailPage(props: { sessionToken: string }) {
               <ActionIcon
                 variant="default"
                 color="red"
-                onClick={async () => {
-                  try {
-                    await unlink({ sessionToken: props.sessionToken, sourceSlug: p.sourceSlug, itemId: p.itemId });
-                    notifications.show({ title: "Unlinked", message: "Removed link." });
-                  } catch (err) {
-                    notifications.show({
-                      title: "Unlink failed",
-                      message: err instanceof Error ? err.message : String(err),
-                      color: "red"
-                    });
-                  }
+                onClick={() => {
+                  modals.openConfirmModal({
+                    title: "Unlink product?",
+                    centered: true,
+                    labels: { confirm: "Unlink", cancel: "Cancel" },
+                    confirmProps: { color: "red" },
+                    children: (
+                      <Stack gap={6}>
+                        <Text size="sm">
+                          Remove the link between <Text component="span" className={text.mono} inherit>{p.itemId}</Text> and this canonical?
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          The source product remains unchanged.
+                        </Text>
+                      </Stack>
+                    ),
+                    onConfirm: async () => {
+                      try {
+                        await unlink({ sessionToken: props.sessionToken, sourceSlug: p.sourceSlug, itemId: p.itemId });
+                        notifications.show({ title: "Unlinked", message: "Removed link." });
+                      } catch (err) {
+                        notifications.show({
+                          title: "Unlink failed",
+                          message: err instanceof Error ? err.message : String(err),
+                          color: "red"
+                        });
+                      }
+                    }
+                  });
                 }}
                 aria-label="Unlink"
               >
@@ -153,7 +171,6 @@ export function CanonicalDetailPage(props: { sessionToken: string }) {
       });
     } finally {
       setDeleting(false);
-      setConfirmOpen(false);
     }
   };
 
@@ -176,7 +193,22 @@ export function CanonicalDetailPage(props: { sessionToken: string }) {
                 color="red"
                 variant="light"
                 leftSection={<IconTrash size={16} />}
-                onClick={() => setConfirmOpen(true)}
+                disabled={deleting}
+                onClick={() => {
+                  modals.openConfirmModal({
+                    title: "Delete canonical?",
+                    centered: true,
+                    closeOnConfirm: true,
+                    labels: { confirm: "Delete", cancel: "Cancel" },
+                    confirmProps: { color: "red" },
+                    children: (
+                      <Text size="sm">
+                        This deletes the canonical and all its links. Source products remain unchanged.
+                      </Text>
+                    ),
+                    onConfirm: () => void onDelete()
+                  });
+                }}
               >
                 Delete
               </Button>
@@ -222,24 +254,25 @@ export function CanonicalDetailPage(props: { sessionToken: string }) {
             </Table>
           </div>
         </Panel>
-      </Stack>
 
-      <Modal opened={confirmOpen} onClose={() => setConfirmOpen(false)} title="Delete canonical?" centered>
-        <Stack gap="sm">
-          <Text size="sm">
-            This deletes the canonical and all its links. Source products remain unchanged.
-          </Text>
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setConfirmOpen(false)} disabled={deleting}>
-              Cancel
-            </Button>
-            <Button color="red" onClick={() => void onDelete()} loading={deleting}>
-              Delete
-            </Button>
+        <Panel>
+          <Group justify="space-between" align="flex-end" wrap="wrap" gap="md">
+            <div>
+              <Title order={4}>Notes</Title>
+              <Text c="dimmed" size="sm">
+                Private scratchpad for this canonical (local only)
+              </Text>
+            </div>
           </Group>
-        </Stack>
-      </Modal>
+          <div style={{ marginTop: 16 }}>
+            <NotesEditor
+              key={canonicalId}
+              storageKey={`corastuff:canonical-notes:${canonicalId}`}
+              placeholder="Add linking hints, vendor quirks, internal comments…"
+            />
+          </div>
+        </Panel>
+      </Stack>
     </Container>
   );
 }
-
