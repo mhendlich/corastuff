@@ -1,6 +1,6 @@
 import { Worker } from "bullmq";
 import { Redis } from "ioredis";
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { ConvexHttpClient } from "convex/browser";
@@ -22,7 +22,8 @@ import {
   scrapeGlobetrotterBrandPage,
   scrapeShopifyCollectionProductsJson,
   scrapeShopifyVendorListingProducts,
-  type PlaywrightContextProfile
+  type PlaywrightContextProfile,
+  type PlaywrightRunArtifactsOptions
 } from "@corastuff/scrapers";
 import type { RunStatus, ScrapeResult, StoredImage } from "@corastuff/shared";
 
@@ -432,13 +433,26 @@ function parsePlaywrightProfile(cfg: Record<string, unknown>): PlaywrightContext
         ? initScriptsRaw.filter((s): s is string => typeof s === "string" && s.trim().length > 0)
         : undefined;
 
+  const headless = pickBool("headless");
+  const slowMoRaw =
+    (nestedCandidate ?? cfg).slowMoMs ??
+    cfg.slowMoMs ??
+    (nestedCandidate ?? cfg).slow_mo_ms ??
+    cfg.slow_mo_ms ??
+    (nestedCandidate ?? cfg).slowMo ??
+    cfg.slowMo;
+  const slowMoMs =
+    typeof slowMoRaw === "number" && Number.isFinite(slowMoRaw) && slowMoRaw > 0 ? Math.trunc(slowMoRaw) : undefined;
+
   const profile: PlaywrightContextProfile = {
     ...(browserType ? { browserType } : {}),
     ...(userAgent ? { userAgent } : {}),
     ...(locale ? { locale } : {}),
     ...(viewport ? { viewport } : {}),
     ...(stealth !== undefined ? { stealth } : {}),
-    ...(initScripts ? { initScripts } : {})
+    ...(initScripts ? { initScripts } : {}),
+    ...(headless !== undefined ? { headless } : {}),
+    ...(slowMoMs !== undefined ? { slowMoMs } : {})
   };
 
   return Object.keys(profile).length > 0 ? profile : undefined;
@@ -795,6 +809,7 @@ async function scrapeSource(args: {
   sourceSlug: string;
   config: unknown;
   log: (msg: string) => void;
+  artifacts?: PlaywrightRunArtifactsOptions;
 }): Promise<ScrapeResult> {
   const amazon = parseAmazonStorefrontConfig(args.sourceSlug, args.config);
   if (amazon) {
@@ -804,6 +819,7 @@ async function scrapeSource(args: {
       baseUrl: amazon.baseUrl,
       currency: amazon.currency,
       ...(amazon.browser ? { browser: amazon.browser } : {}),
+      ...(args.artifacts ? { artifacts: args.artifacts } : {}),
       log: args.log
     });
     return {
@@ -839,6 +855,7 @@ async function scrapeSource(args: {
       productUrl: bunert.productUrl,
       currency: bunert.currency,
       ...(bunert.browser ? { browser: bunert.browser } : {}),
+      ...(args.artifacts ? { artifacts: args.artifacts } : {}),
       log: args.log
     });
     return {
@@ -857,6 +874,7 @@ async function scrapeSource(args: {
       listingUrl: bergzeit.listingUrl,
       baseUrl: bergzeit.baseUrl,
       ...(bergzeit.browser ? { browser: bergzeit.browser } : {}),
+      ...(args.artifacts ? { artifacts: args.artifacts } : {}),
       log: args.log
     });
     return {
@@ -892,6 +910,7 @@ async function scrapeSource(args: {
       baseUrl: globetrotter.baseUrl,
       currency: globetrotter.currency,
       ...(globetrotter.browser ? { browser: globetrotter.browser } : {}),
+      ...(args.artifacts ? { artifacts: args.artifacts } : {}),
       log: args.log
     });
     return {
@@ -911,6 +930,7 @@ async function scrapeSource(args: {
       baseUrl: decathlon.baseUrl,
       currency: decathlon.currency,
       ...(decathlon.browser ? { browser: decathlon.browser } : {}),
+      ...(args.artifacts ? { artifacts: args.artifacts } : {}),
       log: args.log
     });
     return {
@@ -1060,6 +1080,34 @@ async function main() {
       const runDir = path.join(dataDir, "runs", safeFileId(runId));
       await mkdir(runDir, { recursive: true });
       const logPath = path.join(runDir, "run.log");
+      const runDirName = path.basename(runDir);
+      const productsJsonAbsPath = path.join(runDir, "products.json");
+      const productsJsonPath = `runs/${runDirName}/products.json`;
+      const runLogPath = `runs/${runDirName}/run.log`;
+
+      const playwrightArtifacts: Array<{ key: string; type: "html" | "screenshot" | "other"; absPath: string }> = [];
+      const enableTraceDryRun = process.env.SCRAPER_TRACE_DRY_RUN !== "0";
+      const enableTraceOnError = process.env.SCRAPER_TRACE_ON_ERROR === "1";
+      const traceEnabled = dryRun ? enableTraceDryRun : enableTraceOnError;
+
+      const pwArtifacts: PlaywrightRunArtifactsOptions = {
+        dir: runDir,
+        prefix: sourceSlug,
+        when: dryRun ? "always" : "error",
+        capture: {
+          html: true,
+          screenshot: true,
+          trace: traceEnabled
+        },
+        onArtifact: (artifact) => {
+          if (!artifact?.absPath || !artifact.key) return;
+          const type =
+            artifact.type === "html" || artifact.type === "screenshot" || artifact.type === "other"
+              ? artifact.type
+              : "other";
+          playwrightArtifacts.push({ key: artifact.key, type, absPath: artifact.absPath });
+        }
+      };
 
       const log = async (level: "debug" | "info" | "warn" | "error", message: string, payload?: unknown) => {
         await logToFile(logPath, level, message, payload);
@@ -1082,6 +1130,46 @@ async function main() {
             convexForRun = null;
             console.warn("[worker] disabling Convex updates for this run due to error:", err);
           }
+        }
+      };
+
+      const toMediaRelativePath = (absPath: string) => path.relative(dataDir, absPath).split(path.sep).join("/");
+
+      const buildConvexArtifacts = async (includeProductsJson: boolean) => {
+        const mapped = playwrightArtifacts
+          .map((a) => {
+            const rel = toMediaRelativePath(a.absPath);
+            if (!rel || rel.startsWith("..")) return null;
+            const type = a.type === "html" ? "html" : a.type === "screenshot" ? "screenshot" : "other";
+            return { key: a.key, type, path: rel } as const;
+          })
+          .filter(Boolean) as Array<{ key: string; type: "html" | "screenshot" | "other"; path: string }>;
+
+        const out: Array<{ key: string; type: "log" | "json" | "html" | "screenshot" | "other"; path: string }> = [
+          { key: "run.log", type: "log", path: runLogPath },
+          ...mapped
+        ];
+
+        if (includeProductsJson) {
+          const exists = await stat(productsJsonAbsPath).then(() => true).catch(() => false);
+          if (exists) out.unshift({ key: "products.json", type: "json", path: productsJsonPath });
+        }
+
+        return out;
+      };
+
+      const upsertRunArtifacts = async (includeProductsJson: boolean) => {
+        if (!convexForRun) return;
+        try {
+          const artifacts = await buildConvexArtifacts(includeProductsJson);
+          await convexForRun.mutation(runArtifactsUpsertMany, {
+            sessionToken: sessionToken!,
+            runId,
+            artifacts
+          });
+        } catch (err) {
+          convexForRun = null;
+          console.warn("[worker] disabling Convex updates for this run due to artifact error:", err);
         }
       };
 
@@ -1177,9 +1265,14 @@ async function main() {
         await log("info", `Worker started run for ${sourceSlug}`, { workerId });
 
         await throwIfCancelled("before_scrape");
-        let scrapeResult = await scrapeSource({ sourceSlug, config: sourceConfig, log: (m) => {
-          void log("info", m);
-        }});
+        let scrapeResult = await scrapeSource({
+          sourceSlug,
+          config: sourceConfig,
+          artifacts: pwArtifacts,
+          log: (m) => {
+            void log("info", m);
+          }
+        });
         const normalizedProducts = normalizeScrapedProducts(scrapeResult.products, {
           sourceUrl: scrapeResult.sourceUrl,
           config: sourceConfig
@@ -1219,20 +1312,8 @@ async function main() {
           totalProducts: withImages.length
         };
 
-        await writeFile(path.join(runDir, "products.json"), JSON.stringify(resultToWrite, null, 2), "utf8");
-        const runDirName = path.basename(runDir);
-        const productsJsonPath = `runs/${runDirName}/products.json`;
-        const runLogPath = `runs/${runDirName}/run.log`;
-        if (convexForRun) {
-          await convexForRun.mutation(runArtifactsUpsertMany, {
-            sessionToken: sessionToken!,
-            runId,
-            artifacts: [
-              { key: "products.json", type: "json", path: productsJsonPath },
-              { key: "run.log", type: "log", path: runLogPath }
-            ]
-          });
-        }
+        await writeFile(productsJsonAbsPath, JSON.stringify(resultToWrite, null, 2), "utf8");
+        await upsertRunArtifacts(true);
         await log("info", "Wrote run artifacts", {
           productsJson: `/media/${productsJsonPath}`,
           runLog: `/media/${runLogPath}`
@@ -1287,6 +1368,7 @@ async function main() {
       } catch (err) {
         if (err instanceof CancelledError) {
           await logToFile(logPath, "warn", "Run canceled", { error: err.message });
+          await upsertRunArtifacts(true);
           if (convexForRun) {
             await convexForRun.mutation(runsSetStatus, { sessionToken: sessionToken!, runId, status: "canceled" });
           }
@@ -1295,6 +1377,7 @@ async function main() {
 
         const message = err instanceof Error ? err.message : String(err);
         await logToFile(logPath, "error", "Run failed", { error: message });
+        await upsertRunArtifacts(true);
         if (convexForRun) {
           await convexForRun.mutation(runsSetStatus, { sessionToken: sessionToken!, runId, status: "failed", error: message });
         }

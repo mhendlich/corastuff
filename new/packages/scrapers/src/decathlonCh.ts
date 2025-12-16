@@ -1,6 +1,6 @@
 import type { DiscoveredProduct } from "@corastuff/shared";
 import type { Page } from "playwright";
-import { withPlaywrightContext, type PlaywrightContextProfile } from "./playwrightContext.js";
+import { withPlaywrightContext, type PlaywrightContextProfile, type PlaywrightRunArtifactsOptions } from "./playwrightContext.js";
 
 function asNonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -158,6 +158,7 @@ export async function scrapeDecathlonChBrandPage(options: {
   baseUrl?: string;
   currency?: string;
   browser?: PlaywrightContextProfile;
+  artifacts?: PlaywrightRunArtifactsOptions;
   userAgent?: string;
   locale?: string;
   log?: (message: string) => void;
@@ -174,7 +175,9 @@ export async function scrapeDecathlonChBrandPage(options: {
     stealth: options.browser?.stealth ?? true
   };
 
-  return await withPlaywrightContext(browser, async (context) => {
+  return await withPlaywrightContext(
+    browser,
+    async (context) => {
     const page = await context.newPage();
     try {
       options.log?.(`Loading ${options.listingUrl}`);
@@ -239,5 +242,7 @@ export async function scrapeDecathlonChBrandPage(options: {
     } finally {
       await page.close().catch(() => undefined);
     }
-  });
+    },
+    { artifacts: options.artifacts }
+  );
 }

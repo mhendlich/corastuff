@@ -15,9 +15,10 @@ This folder is the starting point for the migration described in `../ARCHITECTUR
 From `new/`:
 
 1. Install deps: `pnpm install`
-2. Run web dev server: `pnpm dev:web`
-3. Run worker (needs Redis): `docker compose up -d redis` then `pnpm dev:worker`
-4. Push Convex functions to the backend:
+2. (Recommended) Watch-build shared TS packages: `pnpm dev:packages`
+3. Run web dev server: `pnpm dev:web`
+4. Run worker (needs Redis): `docker compose up -d redis` then `pnpm dev:worker`
+5. Push Convex functions to the backend:
    - Self-hosted: `./scripts/bootstrap_convex_self_hosted.sh` (recommended)
    - Or: `pnpm dev:convex` (runs `convex dev`)
 
