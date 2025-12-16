@@ -1,6 +1,0 @@
-.formRow {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
-}
-

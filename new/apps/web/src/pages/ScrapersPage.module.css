@@ -1,8 +1,0 @@
-.rowActive {
-  background: color-mix(in srgb, var(--mantine-color-cyan-filled) 10%, transparent);
-}
-
-.rowDisabled {
-  opacity: 0.7;
-}
-
